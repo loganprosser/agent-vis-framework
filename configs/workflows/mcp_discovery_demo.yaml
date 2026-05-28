@@ -1,0 +1,48 @@
+name: mcp_discovery_demo
+version: 0.1.0
+description: Discover tools from the built-in demo MCP server.
+entrypoint: discover_mcp_tools
+
+nodes:
+  - id: discover_mcp_tools
+    type: mcp_discovery
+    provider: mock
+    model: mock-deterministic
+    system_prompt: Discover MCP tools available to this workflow.
+    input_keys: []
+    output_keys:
+      - mcp_tools
+    tools:
+      - builtin_demo_mcp
+    retry_policy:
+      max_attempts: 1
+      backoff_seconds: 0
+    human_approval: false
+    config:
+      ui:
+        x: 180
+        y: 260
+
+  - id: report_generator
+    type: report_generator
+    provider: mock
+    model: mock-deterministic
+    system_prompt: Summarize discovered MCP tools.
+    input_keys:
+      - mcp_tools
+    output_keys:
+      - final_report
+    tools: []
+    retry_policy:
+      max_attempts: 1
+      backoff_seconds: 0
+    human_approval: false
+    config:
+      ui:
+        x: 540
+        y: 260
+
+edges:
+  - source: discover_mcp_tools
+    target: report_generator
+    label: mcp tool catalog

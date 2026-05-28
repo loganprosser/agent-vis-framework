@@ -111,6 +111,106 @@ Check health:
 curl http://127.0.0.1:8000/health
 ```
 
+## Use As A Template For Another Project
+
+You can use this repo as a reusable starter for a new n8n-style agent workflow project.
+
+### macOS Setup
+
+Assuming Xcode Command Line Tools and Homebrew are already installed:
+
+```bash
+brew install python git
+```
+
+Optional, only needed for the future React Flow frontend:
+
+```bash
+brew install node
+```
+
+### Create A New Repo From The Framework
+
+Clone this framework repo somewhere on your machine:
+
+```bash
+git clone <THIS_FRAMEWORK_REPO_URL> agentic-workflow-framework
+cd agentic-workflow-framework
+```
+
+Create a new self-contained project folder:
+
+```bash
+python3 -m app.cli init ../my-agent-workflow
+```
+
+That command physically copies the framework into `../my-agent-workflow`, including:
+
+- `app/`
+- `configs/`
+- `frontend/`
+- `tests/`
+- scripts like `start.sh` and `stop.sh`
+- docs like `README.md` and `CODING_AGENT_GUIDE.md`
+
+Now move into the copied project and run it:
+
+```bash
+cd ../my-agent-workflow
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+pytest
+./start.sh
+```
+
+The virtualenv does not copy the project. The copy already happened during `python3 -m app.cli init ...`. The virtualenv just installs the copied project locally so Python can run FastAPI, LangGraph, tests, and the CLI.
+
+Open:
+
+```text
+http://127.0.0.1:8000/
+```
+
+Turn the copied folder into its own Git repo:
+
+```bash
+git init
+git add .
+git commit -m "Initial agentic workflow project"
+```
+
+If you already created an empty remote repo on GitHub/GitLab/etc.:
+
+```bash
+git remote add origin <YOUR_NEW_REPO_URL>
+git branch -M main
+git push -u origin main
+```
+
+For a project that only wants different configs while reusing this checkout's runtime:
+
+```bash
+WORKFLOW_CONFIG_DIR=/path/to/other-project/configs ./start.sh
+```
+
+The reusable framework code is in `app/`. The project-specific surface is mostly:
+
+- `configs/workflows/*.yaml`
+- `configs/models.yaml`
+- `configs/tools.yaml`
+- `configs/mcps.yaml`
+- custom node classes in `app/nodes/`
+- custom model/tool adapters in `app/models/` and `app/tools/`
+
+Programmatic embedding is also supported:
+
+```python
+from app.factory import create_app
+
+app = create_app(config_dir="configs")
+```
+
 Run the example workflow:
 
 ```bash

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -12,8 +13,8 @@ T = TypeVar("T", bound=BaseModel)
 
 
 class ConfigLoader:
-    def __init__(self, config_dir: Path | str = "configs") -> None:
-        self.config_dir = Path(config_dir)
+    def __init__(self, config_dir: Path | str | None = None) -> None:
+        self.config_dir = Path(config_dir or os.getenv("WORKFLOW_CONFIG_DIR", "configs"))
         self.workflow_dir = self.config_dir / "workflows"
 
     def list_workflows(self) -> list[str]:

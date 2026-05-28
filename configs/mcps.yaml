@@ -1,0 +1,12 @@
+servers:
+  - id: builtin_demo
+    name: Built-in Demo MCP
+    transport: stdio
+    enabled: true
+    command:
+      - "{python}"
+      - "-m"
+      - "app.tools.example_mcp_server"
+    cwd: "{project_root}"
+    env: {}
+    timeout_seconds: 10
