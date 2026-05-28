@@ -8,13 +8,13 @@ from pydantic import BaseModel, Field
 from app.core.config_loader import ConfigLoader
 from app.core.graph_builder import GraphBuilder
 from app.core.registry import ModelRegistry, ToolRegistry
-from app.core.run_store import RunRecord, RunStore
+from app.core.run_store import RunRecord, create_run_store
 from app.core.state import initial_state
 from app.schemas.workflow import WorkflowConfig
 
 router = APIRouter()
 config_loader = ConfigLoader()
-run_store = RunStore()
+run_store = create_run_store()
 
 
 class RunRequest(BaseModel):
@@ -26,7 +26,8 @@ def build_registries() -> tuple[ModelRegistry, ToolRegistry]:
     for provider_config in config_loader.load_models().providers:
         model_registry.register_provider_config(provider_config)
 
-    tool_registry = ToolRegistry()
+    mcp_servers = {server.id: server for server in config_loader.load_mcps().servers}
+    tool_registry = ToolRegistry(mcp_servers)
     for tool_config in config_loader.load_tools().tools:
         tool_registry.register_tool_config(tool_config)
 
@@ -57,6 +58,11 @@ async def save_workflow(workflow_name: str, workflow: WorkflowConfig) -> dict[st
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"workflow": saved.model_dump(), "saved": True}
+
+
+@router.post("/workflows/validate")
+async def validate_workflow(workflow: WorkflowConfig) -> dict[str, Any]:
+    return {"valid": True, "workflow": workflow.model_dump()}
 
 
 @router.post("/workflows/{workflow_name}/run", response_model=RunRecord)

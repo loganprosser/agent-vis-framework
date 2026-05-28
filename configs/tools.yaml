@@ -22,15 +22,21 @@ tools:
 
   - id: filesystem_mcp
     type: mcp
-    enabled: false
+    enabled: true
     config:
-      server_name: filesystem
+      server_id: builtin_demo
 
   - id: repo_reader
     type: repo_reader
     enabled: false
     config:
       server_name: filesystem
+
+  - id: builtin_demo_mcp
+    type: mcp
+    enabled: true
+    config:
+      server_id: builtin_demo
 
   - id: test_runner
     type: test_runner

@@ -7,7 +7,7 @@ from app.models.anthropic_provider import AnthropicModelProvider
 from app.models.base import ModelProvider
 from app.models.mock_provider import MockModelProvider
 from app.models.openai_provider import OpenAIModelProvider
-from app.schemas.workflow import ModelProviderConfig, ToolConfig
+from app.schemas.workflow import McpServerConfig, ModelProviderConfig, ToolConfig
 from app.tools.base import Tool
 from app.tools.mcp_tool import McpTool
 from app.tools.shell_tool import ShellTool
@@ -48,13 +48,14 @@ class ModelRegistry:
 
 
 class ToolRegistry:
-    def __init__(self) -> None:
+    def __init__(self, mcp_servers: dict[str, McpServerConfig] | None = None) -> None:
+        self._mcp_servers = mcp_servers or {}
         self._tool_type_factories: dict[str, ToolFactory] = {
             "shell": lambda config: ShellTool(config.id, {"enabled": config.enabled, **config.config}),
             "tnt_cli": lambda config: TntCliTool(config.id, config.config),
-            "mcp": lambda config: McpTool(config.id, config.config),
+            "mcp": self._create_mcp_tool,
             "test_runner": lambda config: ShellTool(config.id, {"enabled": config.enabled, **config.config}),
-            "repo_reader": lambda config: McpTool(config.id, config.config),
+            "repo_reader": self._create_mcp_tool,
         }
         self._tools: dict[str, Tool] = {}
 
@@ -73,6 +74,11 @@ class ToolRegistry:
 
     def many(self, tool_ids: list[str]) -> dict[str, Tool]:
         return {tool_id: self.get(tool_id) for tool_id in tool_ids}
+
+    def _create_mcp_tool(self, config: ToolConfig) -> McpTool:
+        server_id = str(config.config.get("server_id") or config.config.get("server_name") or "")
+        server = self._mcp_servers.get(server_id)
+        return McpTool(config.id, {"enabled": config.enabled, **config.config}, server)
 
 
 class NodeRegistry:

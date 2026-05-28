@@ -1026,8 +1026,7 @@ INDEX_HTML = """
         applyWorkflowFields();
         applyNodeFields();
         workflow = normalizeWorkflow(workflow);
-        const ids = workflow.nodes.map((node) => node.id);
-        if (new Set(ids).size !== ids.length) throw new Error("Node ids must be unique.");
+        await validateWorkflow();
         await api(`/workflows/${workflow.name}`, {
           method: "PUT",
           headers: {"Content-Type": "application/json"},
@@ -1043,6 +1042,7 @@ INDEX_HTML = """
         applyNodeFields();
         els.runOutput.textContent = "Running...";
         try {
+          await validateWorkflow();
           const body = JSON.parse(els.runInput.value);
           const data = await api(`/workflows/${workflow.name}/run`, {
             method: "POST",
@@ -1055,6 +1055,23 @@ INDEX_HTML = """
           els.runOutput.textContent = error.message;
           setStatus("Run failed");
         }
+      }
+
+      async function validateWorkflow() {
+        const ids = workflow.nodes.map((node) => node.id);
+        if (new Set(ids).size !== ids.length) throw new Error("Node ids must be unique.");
+        if (!workflow.nodes.some((node) => node.id === workflow.entrypoint)) {
+          throw new Error("Entrypoint must point to an existing node.");
+        }
+        const missingEdge = workflow.edges.find((edge) => !ids.includes(edge.source) || !ids.includes(edge.target));
+        if (missingEdge) {
+          throw new Error(`Edge references a missing node: ${missingEdge.source} -> ${missingEdge.target}`);
+        }
+        await api("/workflows/validate", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(workflow),
+        });
       }
 
       function addNode(type = "doc_reader") {

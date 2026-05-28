@@ -2,7 +2,7 @@
 
 A small starter framework for config-driven multi-agent workflows using FastAPI and LangGraph.
 
-The project is intentionally generic: workflows are YAML graphs, nodes are typed Python classes, models live behind provider adapters, and tools/MCPs live behind tool adapters. The first included workflow is a mocked combinatorial test generation pipeline that can later call IBM `tnt-cli` to reduce test cases.
+The project is intentionally generic: workflows are YAML graphs, nodes are typed Python classes, models live behind provider adapters, and tools/MCPs live behind tool adapters. It includes a visual editor, SQLite run persistence, a tiny working MCP stdio demo server, and a mocked combinatorial test generation pipeline that can later call IBM `tnt-cli`.
 
 ## Architecture
 
@@ -25,15 +25,18 @@ Each node receives the same state object and returns an updated state. The start
 ```text
 configs/
   workflows/
+    starter_three_node.yaml
+    mcp_discovery_demo.yaml
     combinatorial_test_generation.yaml
   models.yaml
+  mcps.yaml
   tools.yaml
 app/
   main.py
   api/routes.py
   core/
     config_loader.py
-    graph_builder.py1
+    graph_builder.py
     registry.py
     run_store.py
     state.py
@@ -42,6 +45,7 @@ app/
   nodes/
   schemas/
 examples/
+frontend/
 tests/
 ```
 
@@ -72,6 +76,14 @@ Then open:
 ```text
 http://127.0.0.1:8000/
 ```
+
+If Node/npm are installed, `./start.sh` also starts the optional React Flow editor:
+
+```text
+http://127.0.0.1:5173/
+```
+
+The embedded FastAPI editor at port `8000` remains available even without Node.
 
 The editor loads `starter_three_node` first so you have a simple straight-line workflow to play with:
 
@@ -107,7 +119,7 @@ curl -X POST http://127.0.0.1:8000/workflows/combinatorial_test_generation/run \
   -d @examples/sample_input.json
 ```
 
-The API stores runs in memory. Use the returned `run_id` with:
+The API stores runs in SQLite by default at `.runs/workflows.sqlite3`. Use the returned `run_id` with:
 
 ```bash
 curl http://127.0.0.1:8000/runs/<run_id>
@@ -136,6 +148,7 @@ nodes:
 edges:
   - source: first_node
     target: second_node
+    label: documents
 ```
 
 Validation lives in `app/schemas/workflow.py`.
@@ -162,6 +175,8 @@ Provider-specific SDKs, auth, retries, request formatting, and response parsing 
 
 ## Add A New Tool Or MCP
 
+For a normal tool:
+
 1. Create a tool adapter in `app/tools`.
 2. Subclass `Tool`.
 3. Implement `async def run(...)`.
@@ -169,7 +184,70 @@ Provider-specific SDKs, auth, retries, request formatting, and response parsing 
 5. Add a tool entry in `configs/tools.yaml`.
 6. Reference the tool id from a workflow node.
 
-`ShellTool` is present but disabled by default and only allows explicitly configured commands. `TntCliTool` currently returns a mocked reduced test set and has a TODO where the real IBM `tnt-cli` invocation should go.
+For an MCP server:
+
+1. Add the server command to `configs/mcps.yaml`.
+2. Expose it as a tool in `configs/tools.yaml` with `type: mcp` and `config.server_id`.
+3. Add that tool id to a node's `tools` list.
+4. Use `mcp_discovery` to list available tools or call the MCP from a custom node.
+
+Example:
+
+```yaml
+# configs/mcps.yaml
+servers:
+  - id: builtin_demo
+    name: Built-in Demo MCP
+    transport: stdio
+    enabled: true
+    command: ["{python}", "-m", "app.tools.example_mcp_server"]
+    cwd: "{project_root}"
+```
+
+```yaml
+# configs/tools.yaml
+tools:
+  - id: builtin_demo_mcp
+    type: mcp
+    enabled: true
+    config:
+      server_id: builtin_demo
+```
+
+```yaml
+# workflow node
+tools:
+  - builtin_demo_mcp
+```
+
+`ShellTool` is present but disabled by default and only allows explicitly configured commands. `McpTool` now supports stdio MCP `initialize`, `tools/list`, and `tools/call`. `TntCliTool` currently returns a mocked reduced test set and has a TODO where the real IBM `tnt-cli` invocation should go.
+
+## MCP Demo
+
+Run the built-in MCP discovery workflow:
+
+```bash
+curl -X POST http://127.0.0.1:8000/workflows/mcp_discovery_demo/run \
+  -H "Content-Type: application/json" \
+  -d '{"inputs":{}}'
+```
+
+It starts `app.tools.example_mcp_server` over stdio, lists its tools, and writes the result into workflow state.
+
+## Run Persistence
+
+By default:
+
+```text
+WORKFLOW_RUN_STORE=sqlite
+WORKFLOW_RUN_DB=.runs/workflows.sqlite3
+```
+
+For temporary memory-only runs:
+
+```bash
+WORKFLOW_RUN_STORE=memory ./start.sh
+```
 
 ## Example Workflow
 
@@ -189,4 +267,4 @@ The final report summarizes extracted variables, generated domains, constraints,
 pytest
 ```
 
-The tests validate config loading and compile/run the mocked LangGraph workflow.
+The tests validate config loading, graph execution, SQLite run persistence, and the built-in MCP stdio path.

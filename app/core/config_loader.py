@@ -6,7 +6,7 @@ from typing import Any, TypeVar
 import yaml
 from pydantic import BaseModel
 
-from app.schemas.workflow import ModelsConfig, ToolsConfig, WorkflowConfig
+from app.schemas.workflow import McpsConfig, ModelsConfig, ToolsConfig, WorkflowConfig
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -41,6 +41,12 @@ class ConfigLoader:
 
     def load_tools(self) -> ToolsConfig:
         return self._load_yaml_model(self.config_dir / "tools.yaml", ToolsConfig)
+
+    def load_mcps(self) -> McpsConfig:
+        path = self.config_dir / "mcps.yaml"
+        if not path.exists():
+            return McpsConfig()
+        return self._load_yaml_model(path, McpsConfig)
 
     def _load_yaml_model(self, path: Path, model_type: type[T]) -> T:
         if not path.exists():

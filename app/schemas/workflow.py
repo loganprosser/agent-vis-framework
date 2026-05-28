@@ -74,9 +74,24 @@ class ToolConfig(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
 
 
+class McpServerConfig(BaseModel):
+    id: str
+    name: str
+    transport: Literal["stdio"] = "stdio"
+    enabled: bool = True
+    command: list[str] = Field(default_factory=list)
+    cwd: str | None = None
+    env: dict[str, str] = Field(default_factory=dict)
+    timeout_seconds: float = Field(default=10.0, gt=0)
+
+
 class ModelsConfig(BaseModel):
     providers: list[ModelProviderConfig] = Field(default_factory=list)
 
 
 class ToolsConfig(BaseModel):
     tools: list[ToolConfig] = Field(default_factory=list)
+
+
+class McpsConfig(BaseModel):
+    servers: list[McpServerConfig] = Field(default_factory=list)

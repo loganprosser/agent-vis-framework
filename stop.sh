@@ -3,8 +3,18 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PID_FILE="$ROOT_DIR/.server.pid"
+FRONTEND_PID_FILE="$ROOT_DIR/.frontend.pid"
 
 cd "$ROOT_DIR"
+
+if [[ -f "$FRONTEND_PID_FILE" ]]; then
+  FRONTEND_PID="$(cat "$FRONTEND_PID_FILE")"
+  if kill -0 "$FRONTEND_PID" 2>/dev/null; then
+    echo "Stopping frontend PID $FRONTEND_PID..."
+    kill "$FRONTEND_PID" || true
+  fi
+  rm -f "$FRONTEND_PID_FILE"
+fi
 
 if [[ ! -f "$PID_FILE" ]]; then
   if pgrep -f "uvicorn app.main:app" >/dev/null 2>&1; then
