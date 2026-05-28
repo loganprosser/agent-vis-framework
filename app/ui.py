@@ -123,6 +123,8 @@ INDEX_HTML = """
       .right {
         border-width: 0 0 0 1px;
         padding: 16px;
+        height: 100vh;
+        overflow-y: auto;
       }
       .workspace {
         min-width: 0;
@@ -234,15 +236,19 @@ INDEX_HTML = """
         background-size: 28px 28px;
       }
       .canvas-stage {
+        position: absolute;
+        left: 0;
+        top: 0;
+        transform-origin: 0 0;
+        transition: transform 0.12s ease-out;
+      }
+      #canvas-zoom {
         position: relative;
-        width: 2400px;
-        height: 1300px;
       }
       .edges {
         position: absolute;
         inset: 0;
-        width: 2400px;
-        height: 1300px;
+        overflow: visible;
         color: var(--edge);
         pointer-events: none;
       }
@@ -415,6 +421,43 @@ INDEX_HTML = """
         grid-template-columns: 1fr 1fr 1fr auto;
         gap: 6px;
       }
+      .chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        min-height: 10px;
+        margin-bottom: 4px;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 3px 8px;
+        font-size: 11px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+      .chip.tool-chip {
+        background: var(--accent-soft);
+        color: var(--accent);
+        border-color: var(--accent-dark);
+      }
+      .chip.mcp-chip {
+        background: #eee9ff;
+        color: var(--violet);
+        border-color: #a78bfa;
+      }
+      .chip .chip-remove {
+        cursor: pointer;
+        opacity: 0.55;
+        font-weight: 900;
+        margin-left: 2px;
+      }
+      .chip .chip-remove:hover {
+        opacity: 1;
+      }
       @media (max-width: 1180px) {
         body { overflow: auto; }
         .app {
@@ -468,15 +511,20 @@ INDEX_HTML = """
             <div id="workflow-description" class="subtle"></div>
           </div>
           <div class="row">
+            <button class="secondary" id="zoom-in-button" type="button">+</button>
+            <button class="secondary" id="zoom-out-button" type="button">−</button>
+            <button class="secondary" id="zoom-reset-button" type="button">Fit</button>
             <button class="secondary" id="delete-edge-button" type="button">Delete Edge</button>
             <button class="secondary" id="theme-button" type="button">Light Mode</button>
             <button class="secondary" id="docs-button" type="button">API Docs</button>
           </div>
         </header>
         <div id="canvas-shell" class="canvas-shell">
-          <div id="canvas-stage" class="canvas-stage">
-            <svg id="edges" class="edges" aria-label="Workflow edges"></svg>
-            <div id="nodes"></div>
+          <div id="canvas-zoom">
+            <div id="canvas-stage" class="canvas-stage">
+              <svg id="edges" class="edges" aria-label="Workflow edges"></svg>
+              <div id="nodes"></div>
+            </div>
           </div>
         </div>
       </section>
@@ -512,12 +560,12 @@ INDEX_HTML = """
               </div>
               <div class="field" style="flex:1">
                 <label for="node-provider">Provider</label>
-                <input id="node-provider" />
+                <select id="node-provider"></select>
               </div>
             </div>
             <div class="field">
               <label for="node-model">Model</label>
-              <input id="node-model" />
+              <select id="node-model"></select>
             </div>
             <div class="field">
               <label for="node-prompt">System Prompt</label>
@@ -534,8 +582,14 @@ INDEX_HTML = """
               </div>
             </div>
             <div class="field">
-              <label for="node-tools">Tools / MCPs</label>
-              <input id="node-tools" placeholder="tnt_cli, filesystem_mcp" />
+              <label>Tools</label>
+              <div id="node-tools-selected" class="chip-row"></div>
+              <select id="node-tools-add"><option value="">Add tool...</option></select>
+            </div>
+            <div class="field">
+              <label>MCPs</label>
+              <div id="node-mcps-selected" class="chip-row"></div>
+              <select id="node-mcps-add"><option value="">Add MCP...</option></select>
             </div>
             <label class="row" style="justify-content:flex-start">
               <input id="node-approval" type="checkbox" style="width:auto" />
@@ -602,6 +656,7 @@ INDEX_HTML = """
         description: $("workflow-description"),
         shell: $("canvas-shell"),
         stage: $("canvas-stage"),
+        zoomWrap: $("canvas-zoom"),
         edges: $("edges"),
         nodes: $("nodes"),
         status: $("status"),
@@ -617,7 +672,10 @@ INDEX_HTML = """
         nodePrompt: $("node-prompt"),
         nodeInputs: $("node-inputs"),
         nodeOutputs: $("node-outputs"),
-        nodeTools: $("node-tools"),
+        nodeToolsSelected: $("node-tools-selected"),
+        nodeToolsAdd: $("node-tools-add"),
+        nodeMcpsSelected: $("node-mcps-selected"),
+        nodeMcpsAdd: $("node-mcps-add"),
         nodeApproval: $("node-approval"),
         edgeList: $("edge-list"),
         clipboardJson: $("clipboard-json"),
@@ -632,6 +690,10 @@ INDEX_HTML = """
       let selectedEdgeIndex = null;
       let drag = null;
       let connection = null;
+      let zoom = 1;
+      let canvasWidth = 2400;
+      let canvasHeight = 1300;
+      let catalog = {providers: [], tools: [], mcps: []};
 
       function applyTheme(theme) {
         document.documentElement.dataset.theme = theme;
@@ -651,6 +713,14 @@ INDEX_HTML = """
 
       function setStatus(message) {
         els.status.textContent = message;
+      }
+
+      async function loadCatalog() {
+        try {
+          catalog = await api("/catalog");
+        } catch (e) {
+          catalog = {providers: [], tools: [], mcps: []};
+        }
       }
 
       function normalizeWorkflow(nextWorkflow) {
@@ -708,7 +778,7 @@ INDEX_HTML = """
         selectedNodeId = workflow.nodes[0]?.id || null;
         selectedEdgeIndex = null;
         renderAll();
-        centerCanvasOnWorkflow();
+        setTimeout(fitView, 50);
         setStatus(`Loaded ${name}`);
       }
 
@@ -725,6 +795,7 @@ INDEX_HTML = """
         renderEdges();
         renderNodeEditor();
         renderEdgeList();
+        updateCanvasSize();
         syncClipboard();
       }
 
@@ -864,12 +935,87 @@ INDEX_HTML = """
         if (!node) return;
         els.nodeId.value = node.id;
         els.nodeType.value = node.type;
-        els.nodeProvider.value = node.provider || "";
-        els.nodeModel.value = node.model || "";
+
+        // Provider dropdown
+        els.nodeProvider.innerHTML = "";
+        catalog.providers.forEach((p) => {
+          const opt = document.createElement("option");
+          opt.value = p.id;
+          opt.textContent = p.id + " (" + p.type + ")";
+          opt.selected = p.id === node.provider;
+          els.nodeProvider.appendChild(opt);
+        });
+
+        // Model dropdown - models from selected provider
+        els.nodeModel.innerHTML = "";
+        const selProvider = catalog.providers.find((p) => p.id === (node.provider || els.nodeProvider.value));
+        if (selProvider) {
+          const opt = document.createElement("option");
+          opt.value = selProvider.default_model;
+          opt.textContent = selProvider.default_model;
+          opt.selected = selProvider.default_model === node.model;
+          els.nodeModel.appendChild(opt);
+        }
+        if (node.model && (!selProvider || selProvider.default_model !== node.model)) {
+          const opt = document.createElement("option");
+          opt.value = node.model;
+          opt.textContent = node.model;
+          opt.selected = true;
+          els.nodeModel.appendChild(opt);
+        }
+
         els.nodePrompt.value = node.system_prompt || "";
         els.nodeInputs.value = node.input_keys.join(", ");
         els.nodeOutputs.value = node.output_keys.join(", ");
-        els.nodeTools.value = node.tools.join(", ");
+
+        // Separate tools and MCPs
+        const activeTools = node.tools || [];
+        const catalogTools = catalog.tools.filter((t) => t.type !== "mcp");
+        const catalogMcps = catalog.tools.filter((t) => t.type === "mcp");
+
+        // Selected tools as chips
+        els.nodeToolsSelected.innerHTML = "";
+        activeTools.filter((id) => catalogTools.some((t) => t.id === id)).forEach((id) => {
+          const chip = document.createElement("span");
+          chip.className = "chip tool-chip";
+          chip.innerHTML = escapeHtml(id) + ' <span class="chip-remove" data-remove-tool="' + escapeHtml(id) + '">&times;</span>';
+          els.nodeToolsSelected.appendChild(chip);
+        });
+        // Selected MCPs as chips
+        els.nodeMcpsSelected.innerHTML = "";
+        activeTools.filter((id) => catalogMcps.some((t) => t.id === id)).forEach((id) => {
+          const chip = document.createElement("span");
+          chip.className = "chip mcp-chip";
+          chip.innerHTML = escapeHtml(id) + ' <span class="chip-remove" data-remove-mcp="' + escapeHtml(id) + '">&times;</span>';
+          els.nodeMcpsSelected.appendChild(chip);
+        });
+        // Also show any active tools not in catalog (custom)
+        activeTools.filter((id) => !catalog.tools.some((t) => t.id === id)).forEach((id) => {
+          const chip = document.createElement("span");
+          chip.className = "chip tool-chip";
+          chip.innerHTML = escapeHtml(id) + ' <span class="chip-remove" data-remove-tool="' + escapeHtml(id) + '">&times;</span>';
+          els.nodeToolsSelected.appendChild(chip);
+        });
+
+        // Tool add dropdown
+        els.nodeToolsAdd.innerHTML = '<option value="">Add tool...</option>';
+        catalogTools.forEach((t) => {
+          if (activeTools.includes(t.id)) return;
+          const opt = document.createElement("option");
+          opt.value = t.id;
+          opt.textContent = t.id + (!t.enabled ? " (disabled)" : "");
+          els.nodeToolsAdd.appendChild(opt);
+        });
+        // MCP add dropdown
+        els.nodeMcpsAdd.innerHTML = '<option value="">Add MCP...</option>';
+        catalogMcps.forEach((t) => {
+          if (activeTools.includes(t.id)) return;
+          const opt = document.createElement("option");
+          opt.value = t.id;
+          opt.textContent = t.id + (!t.enabled ? " (disabled)" : "");
+          els.nodeMcpsAdd.appendChild(opt);
+        });
+
         els.nodeApproval.checked = node.human_approval;
       }
 
@@ -907,7 +1053,10 @@ INDEX_HTML = """
         });
         els.edgeList.querySelectorAll("[data-edge-delete]").forEach((button) => {
           button.onclick = () => {
-            workflow.edges.splice(Number(button.dataset.edgeDelete), 1);
+            const idx = Number(button.dataset.edgeDelete);
+            const edge = workflow.edges[idx];
+            if (!confirm('Delete edge ' + edge.source + ' -> ' + edge.target + '?')) return;
+            workflow.edges.splice(idx, 1);
             selectedEdgeIndex = null;
             renderAll();
           };
@@ -948,8 +1097,8 @@ INDEX_HTML = """
         if (!drag) return;
         const node = workflow.nodes.find((item) => item.id === drag.nodeId);
         if (!node) return;
-        node.config.ui.x = Math.max(40, drag.originalX + event.clientX - drag.startX);
-        node.config.ui.y = Math.max(40, drag.originalY + event.clientY - drag.startY);
+        node.config.ui.x = Math.max(40, drag.originalX + (event.clientX - drag.startX) / zoom);
+        node.config.ui.y = Math.max(40, drag.originalY + (event.clientY - drag.startY) / zoom);
         const element = [...els.nodes.children].find((candidate) => candidate.dataset.nodeId === node.id);
         if (element) {
           element.style.left = `${node.config.ui.x}px`;
@@ -1010,7 +1159,7 @@ INDEX_HTML = """
         node.system_prompt = els.nodePrompt.value;
         node.input_keys = csv(els.nodeInputs.value);
         node.output_keys = csv(els.nodeOutputs.value);
-        node.tools = csv(els.nodeTools.value);
+        node.tools = [...els.nodeToolsSelected.querySelectorAll(".chip-remove[data-remove-tool]"), ...els.nodeMcpsSelected.querySelectorAll(".chip-remove[data-remove-mcp]")].map((el) => el.dataset.removeTool || el.dataset.removeMcp);
         node.human_approval = els.nodeApproval.checked;
         if (oldId !== nextId) {
           workflow.edges.forEach((edge) => {
@@ -1103,6 +1252,7 @@ INDEX_HTML = """
       function deleteNode() {
         const node = getSelectedNode();
         if (!node) return;
+        if (!confirm('Delete node ' + node.id + ' and its connected edges?')) return;
         workflow.nodes = workflow.nodes.filter((item) => item.id !== node.id);
         workflow.edges = workflow.edges.filter((edge) => edge.source !== node.id && edge.target !== node.id);
         workflow.entrypoint = workflow.nodes.find((item) => item.id === workflow.entrypoint)?.id || workflow.nodes[0]?.id || "";
@@ -1113,6 +1263,8 @@ INDEX_HTML = """
 
       function deleteSelectedEdge() {
         if (selectedEdgeIndex === null) return;
+        const edge = workflow.edges[selectedEdgeIndex];
+        if (!confirm('Delete edge ' + edge.source + ' -> ' + edge.target + '?')) return;
         workflow.edges.splice(selectedEdgeIndex, 1);
         selectedEdgeIndex = null;
         renderAll();
@@ -1140,7 +1292,7 @@ INDEX_HTML = """
           node.config.ui.y = 180 + (index % 2) * 170;
         });
         renderAll();
-        centerCanvasOnWorkflow();
+        setTimeout(fitView, 50);
       }
 
       function loadFromJson() {
@@ -1157,6 +1309,56 @@ INDEX_HTML = """
         await navigator.clipboard?.writeText(els.clipboardJson.value).catch(() => {});
         els.clipboardJson.select();
         setStatus("Workflow JSON ready to copy");
+      }
+
+      function updateCanvasSize() {
+        const padding = 200;
+        let maxRight = 2400;
+        let maxBottom = 1300;
+        workflow.nodes.forEach((node) => {
+          maxRight = Math.max(maxRight, node.config.ui.x + NODE_W + padding);
+          maxBottom = Math.max(maxBottom, node.config.ui.y + NODE_H + padding);
+        });
+        canvasWidth = maxRight;
+        canvasHeight = maxBottom;
+        els.stage.style.width = canvasWidth + "px";
+        els.stage.style.height = canvasHeight + "px";
+        els.edges.setAttribute("viewBox", "0 0 " + canvasWidth + " " + canvasHeight);
+        els.zoomWrap.style.width = (canvasWidth * zoom) + "px";
+        els.zoomWrap.style.height = (canvasHeight * zoom) + "px";
+      }
+
+      function setZoom(nextZoom, pivotX, pivotY) {
+        const prevZoom = zoom;
+        zoom = Math.max(0.15, Math.min(2, nextZoom));
+        els.stage.style.transform = "scale(" + zoom + ")";
+        els.zoomWrap.style.width = (canvasWidth * zoom) + "px";
+        els.zoomWrap.style.height = (canvasHeight * zoom) + "px";
+        if (pivotX !== undefined && pivotY !== undefined) {
+          const ratio = zoom / prevZoom;
+          els.shell.scrollLeft = pivotX * ratio - (pivotX - els.shell.scrollLeft);
+          els.shell.scrollTop = pivotY * ratio - (pivotY - els.shell.scrollTop);
+        }
+        setStatus("Zoom " + Math.round(zoom * 100) + "%");
+      }
+
+      function fitView() {
+        if (!workflow.nodes.length) { setZoom(1); return; }
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        workflow.nodes.forEach((node) => {
+          minX = Math.min(minX, node.config.ui.x);
+          minY = Math.min(minY, node.config.ui.y);
+          maxX = Math.max(maxX, node.config.ui.x + NODE_W);
+          maxY = Math.max(maxY, node.config.ui.y + NODE_H);
+        });
+        const contentW = maxX - minX + 100;
+        const contentH = maxY - minY + 100;
+        const viewW = els.shell.clientWidth;
+        const viewH = els.shell.clientHeight;
+        const fitZoom = Math.min(1.5, Math.min(viewW / contentW, viewH / contentH));
+        setZoom(fitZoom);
+        els.shell.scrollLeft = Math.max(0, (minX - 50) * fitZoom);
+        els.shell.scrollTop = Math.max(0, (minY - 50) * fitZoom);
       }
 
       function centerCanvasOnWorkflow() {
@@ -1189,8 +1391,11 @@ INDEX_HTML = """
       }
 
       function canvasPoint(event) {
-        const rect = els.stage.getBoundingClientRect();
-        return {x: event.clientX - rect.left, y: event.clientY - rect.top};
+        const shellRect = els.shell.getBoundingClientRect();
+        return {
+          x: (event.clientX - shellRect.left + els.shell.scrollLeft) / zoom,
+          y: (event.clientY - shellRect.top + els.shell.scrollTop) / zoom,
+        };
       }
 
       function getSelectedNode() {
@@ -1260,22 +1465,60 @@ INDEX_HTML = """
       [
         els.workflowName,
         els.workflowDescriptionInput,
-        els.entrypoint,
         els.nodeId,
         els.nodeType,
-        els.nodeProvider,
-        els.nodeModel,
         els.nodePrompt,
         els.nodeInputs,
         els.nodeOutputs,
-        els.nodeTools,
-        els.nodeApproval,
       ].forEach((input) => {
         input.oninput = () => {
           applyWorkflowFields();
           applyNodeFields();
           renderAll();
         };
+      });
+      [
+        els.entrypoint,
+        els.nodeProvider,
+        els.nodeModel,
+      ].forEach((select) => {
+        select.onchange = () => {
+          applyWorkflowFields();
+          applyNodeFields();
+          renderAll();
+        };
+      });
+      els.nodeApproval.onchange = () => {
+        applyNodeFields();
+        renderAll();
+      };
+      els.nodeToolsAdd.onchange = () => {
+        const node = getSelectedNode();
+        if (!node || !els.nodeToolsAdd.value) return;
+        node.tools.push(els.nodeToolsAdd.value);
+        renderAll();
+      };
+      els.nodeMcpsAdd.onchange = () => {
+        const node = getSelectedNode();
+        if (!node || !els.nodeMcpsAdd.value) return;
+        node.tools.push(els.nodeMcpsAdd.value);
+        renderAll();
+      };
+      document.addEventListener("click", (event) => {
+        const removeTool = event.target.closest("[data-remove-tool]");
+        const removeMcp = event.target.closest("[data-remove-mcp]");
+        if (removeTool) {
+          const node = getSelectedNode();
+          if (!node) return;
+          node.tools = node.tools.filter((t) => t !== removeTool.dataset.removeTool);
+          renderAll();
+        }
+        if (removeMcp) {
+          const node = getSelectedNode();
+          if (!node) return;
+          node.tools = node.tools.filter((t) => t !== removeMcp.dataset.removeMcp);
+          renderAll();
+        }
       });
 
       $("run-button").onclick = () => runWorkflow().catch((error) => setStatus(error.message));
@@ -1286,9 +1529,30 @@ INDEX_HTML = """
         try { loadFromJson(); } catch (error) { setStatus(error.message); }
       };
       $("layout-button").onclick = autoLayout;
-      $("reload-button").onclick = () => loadWorkflows().catch((error) => setStatus(error.message));
+      $("reload-button").onclick = () => loadCatalog().then(() => loadWorkflows()).catch((error) => setStatus(error.message));
       $("delete-node-button").onclick = deleteNode;
       $("delete-edge-button").onclick = deleteSelectedEdge;
+      $("zoom-in-button").onclick = () => {
+        const pivotX = els.shell.scrollLeft + els.shell.clientWidth / 2;
+        const pivotY = els.shell.scrollTop + els.shell.clientHeight / 2;
+        setZoom(zoom * 1.2, pivotX, pivotY);
+      };
+      $("zoom-out-button").onclick = () => {
+        const pivotX = els.shell.scrollLeft + els.shell.clientWidth / 2;
+        const pivotY = els.shell.scrollTop + els.shell.clientHeight / 2;
+        setZoom(zoom / 1.2, pivotX, pivotY);
+      };
+      $("zoom-reset-button").onclick = () => fitView();
+      els.shell.addEventListener("wheel", (event) => {
+        if (event.ctrlKey || event.metaKey) {
+          event.preventDefault();
+          const shellRect = els.shell.getBoundingClientRect();
+          const pivotX = event.clientX - shellRect.left + els.shell.scrollLeft;
+          const pivotY = event.clientY - shellRect.top + els.shell.scrollTop;
+          const factor = 1 - Math.sign(event.deltaY) * 0.08;
+          setZoom(zoom * factor, pivotX, pivotY);
+        }
+      }, {passive: false});
       $("theme-button").onclick = toggleTheme;
       $("docs-button").onclick = () => window.open("/docs", "_blank");
       applyTheme(document.documentElement.dataset.theme || "dark");
@@ -1304,7 +1568,7 @@ INDEX_HTML = """
         }
       };
 
-      loadWorkflows().catch((error) => {
+      loadCatalog().then(() => loadWorkflows()).catch((error) => {
         newDraft();
         workflow.name = "starter_three_node_local";
         workflow.description = "Local fallback starter workflow. The API failed to load saved workflows.";

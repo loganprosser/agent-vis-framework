@@ -43,6 +43,22 @@ def create_router(
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    @router.get("/catalog")
+    async def catalog() -> dict[str, Any]:
+        models = config_loader.load_models()
+        tools = config_loader.load_tools()
+        mcps = config_loader.load_mcps()
+        providers = []
+        for p in models.providers:
+            providers.append({"id": p.id, "type": p.type, "default_model": p.default_model})
+        tool_list = []
+        for t in tools.tools:
+            tool_list.append({"id": t.id, "type": t.type, "enabled": t.enabled})
+        mcp_list = []
+        for s in mcps.servers:
+            mcp_list.append({"id": s.id, "name": s.name, "transport": s.transport, "enabled": s.enabled})
+        return {"providers": providers, "tools": tool_list, "mcps": mcp_list}
+
     @router.get("/workflows")
     async def list_workflows() -> dict[str, list[str]]:
         return {"workflows": config_loader.list_workflows()}

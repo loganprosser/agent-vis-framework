@@ -34,6 +34,7 @@ configs/
 app/
   main.py
   api/routes.py
+  ui.py
   core/
     config_loader.py
     graph_builder.py
@@ -91,7 +92,9 @@ The editor loads `starter_three_node` first so you have a simple straight-line w
 doc_reader -> variable_extractor -> report_generator
 ```
 
-The editor canvas supports dragging nodes horizontally across the grid, selecting nodes to edit their config, dragging from a node's right handle to another node's left handle to create an edge, selecting an edge on the canvas, and deleting the selected edge. Add nodes from the Node Palette on the left. Node positions are saved in each node's `config.ui` block when you save the workflow.
+The editor canvas supports zoom (Ctrl/Cmd + scroll, or the +/−/Fit buttons), panning by dragging the canvas, dragging nodes to reposition them, selecting nodes to edit their config, and dragging from a node's right handle to another node's left handle to create an edge. The canvas auto-sizes to fit all nodes. The Fit button zooms to show the entire workflow in the viewport.
+
+The right panel shows the selected node's configuration with dropdown selectors for provider and model (populated from `configs/models.yaml`), and separate chip-based selectors for Tools and MCPs (populated from `configs/tools.yaml`). Selected items appear as removable chips — teal for tools, purple for MCPs — with a dropdown to add more. All delete actions require confirmation.
 
 Stop it:
 
@@ -223,6 +226,12 @@ The API stores runs in SQLite by default at `.runs/workflows.sqlite3`. Use the r
 
 ```bash
 curl http://127.0.0.1:8000/runs/<run_id>
+```
+
+The `/catalog` endpoint returns available providers, tools, and MCPs (used by the visual editor to populate dropdowns):
+
+```bash
+curl http://127.0.0.1:8000/catalog
 ```
 
 ## Workflow Configs
