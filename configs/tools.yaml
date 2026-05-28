@@ -1,0 +1,40 @@
+tools:
+  - id: shell_safe
+    type: shell
+    enabled: false
+    config:
+      allowed_commands:
+        - pytest
+        - python
+
+  - id: tnt_cli
+    type: tnt_cli
+    enabled: true
+    config:
+      command: tnt
+      mode: mock
+
+  - id: github_mcp
+    type: mcp
+    enabled: false
+    config:
+      server_name: github
+
+  - id: filesystem_mcp
+    type: mcp
+    enabled: false
+    config:
+      server_name: filesystem
+
+  - id: repo_reader
+    type: repo_reader
+    enabled: false
+    config:
+      server_name: filesystem
+
+  - id: test_runner
+    type: test_runner
+    enabled: false
+    config:
+      allowed_commands:
+        - pytest

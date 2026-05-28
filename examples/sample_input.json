@@ -1,0 +1,8 @@
+{
+  "inputs": {
+    "requirements_doc": "examples/checkout_requirements.md",
+    "source_path": "examples/mock_checkout_app",
+    "coverage_strength": 2,
+    "target_test_framework": "pytest"
+  }
+}

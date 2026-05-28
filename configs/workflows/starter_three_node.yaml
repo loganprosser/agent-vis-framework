@@ -1,0 +1,70 @@
+name: starter_three_node
+version: 0.1.0
+description: Tiny three-node workflow for practicing drag, connect, edit, save, and run.
+entrypoint: doc_reader
+
+nodes:
+  - id: doc_reader
+    type: doc_reader
+    provider: mock
+    model: mock-deterministic
+    system_prompt: Read a short requirements document and summarize it.
+    input_keys:
+      - requirements_doc
+    output_keys:
+      - documents
+    tools: []
+    retry_policy:
+      max_attempts: 1
+      backoff_seconds: 0
+    human_approval: false
+    config:
+      ui:
+        x: 140
+        y: 260
+
+  - id: variable_extractor
+    type: variable_extractor
+    provider: mock
+    model: mock-deterministic
+    system_prompt: Extract important test variables from the document summary.
+    input_keys:
+      - doc_reader
+    output_keys:
+      - variables
+    tools: []
+    retry_policy:
+      max_attempts: 1
+      backoff_seconds: 0
+    human_approval: false
+    config:
+      ui:
+        x: 500
+        y: 260
+
+  - id: report_generator
+    type: report_generator
+    provider: mock
+    model: mock-deterministic
+    system_prompt: Produce a short markdown report.
+    input_keys:
+      - variables
+    output_keys:
+      - final_report
+    tools: []
+    retry_policy:
+      max_attempts: 1
+      backoff_seconds: 0
+    human_approval: false
+    config:
+      ui:
+        x: 860
+        y: 260
+
+edges:
+  - source: doc_reader
+    target: variable_extractor
+    label: documents
+  - source: variable_extractor
+    target: report_generator
+    label: variables

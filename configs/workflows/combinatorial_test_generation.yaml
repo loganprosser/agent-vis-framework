@@ -1,0 +1,206 @@
+name: combinatorial_test_generation
+version: 0.1.0
+description: Mocked workflow for generating reduced combinatorial test cases.
+entrypoint: doc_reader
+
+nodes:
+  - id: doc_reader
+    type: doc_reader
+    provider: mock
+    model: mock-deterministic
+    system_prompt: Read product requirements and summarize test-relevant behavior.
+    input_keys:
+      - requirements_doc
+    output_keys:
+      - documents
+    tools:
+      - filesystem_mcp
+    retry_policy:
+      max_attempts: 1
+      backoff_seconds: 0
+    human_approval: false
+
+  - id: source_reader
+    type: source_reader
+    provider: mock
+    model: mock-deterministic
+    system_prompt: Read source code and identify branches relevant to testing.
+    input_keys:
+      - source_path
+    output_keys:
+      - source_files
+    tools:
+      - repo_reader
+    retry_policy:
+      max_attempts: 1
+      backoff_seconds: 0
+    human_approval: false
+
+  - id: variable_extractor
+    type: variable_extractor
+    provider: mock
+    model: mock-deterministic
+    system_prompt: Extract candidate variables for combinatorial testing.
+    input_keys:
+      - doc_reader
+      - source_reader
+    output_keys:
+      - variables
+    tools: []
+    retry_policy:
+      max_attempts: 2
+      backoff_seconds: 0
+    human_approval: false
+
+  - id: variable_classifier
+    type: variable_classifier
+    provider: mock
+    model: mock-deterministic
+    system_prompt: Classify variables by source, risk, and test semantics.
+    input_keys:
+      - variables
+    output_keys:
+      - classified_variables
+    tools: []
+    retry_policy:
+      max_attempts: 1
+      backoff_seconds: 0
+    human_approval: false
+
+  - id: domain_generator
+    type: domain_generator
+    provider: mock
+    model: mock-deterministic
+    system_prompt: Generate representative domains for each variable.
+    input_keys:
+      - classified_variables
+    output_keys:
+      - domains
+    tools: []
+    retry_policy:
+      max_attempts: 1
+      backoff_seconds: 0
+    human_approval: false
+
+  - id: constraint_builder
+    type: constraint_builder
+    provider: mock
+    model: mock-deterministic
+    system_prompt: Build constraints that prevent invalid test combinations.
+    input_keys:
+      - classified_variables
+      - domains
+    output_keys:
+      - constraints
+    tools: []
+    retry_policy:
+      max_attempts: 1
+      backoff_seconds: 0
+    human_approval: true
+
+  - id: tnt_cli_reducer
+    type: tnt_cli_reducer
+    provider: mock
+    model: mock-deterministic
+    system_prompt: Reduce the full test matrix using pairwise or n-wise coverage.
+    input_keys:
+      - variables
+      - domains
+      - constraints
+    output_keys:
+      - reduced_test_set
+    tools:
+      - tnt_cli
+    retry_policy:
+      max_attempts: 1
+      backoff_seconds: 0
+    human_approval: false
+
+  - id: test_writer
+    type: test_writer
+    provider: mock
+    model: mock-deterministic
+    system_prompt: Generate executable tests from the reduced set.
+    input_keys:
+      - reduced_test_set
+    output_keys:
+      - generated_tests
+    tools: []
+    retry_policy:
+      max_attempts: 1
+      backoff_seconds: 0
+    human_approval: false
+
+  - id: test_validator
+    type: test_validator
+    provider: mock
+    model: mock-deterministic
+    system_prompt: Validate generated tests for completeness and obvious errors.
+    input_keys:
+      - generated_tests
+    output_keys:
+      - validation_findings
+    tools: []
+    retry_policy:
+      max_attempts: 1
+      backoff_seconds: 0
+    human_approval: false
+
+  - id: test_runner
+    type: test_runner
+    provider: mock
+    model: mock-deterministic
+    system_prompt: Run generated tests and summarize results.
+    input_keys:
+      - generated_tests
+    output_keys:
+      - run_results
+    tools:
+      - test_runner
+    retry_policy:
+      max_attempts: 1
+      backoff_seconds: 0
+    human_approval: false
+
+  - id: report_generator
+    type: report_generator
+    provider: mock
+    model: mock-deterministic
+    system_prompt: Produce a concise markdown report for the workflow run.
+    input_keys:
+      - variables
+      - domains
+      - constraints
+      - reduced_test_set
+      - generated_tests
+      - validation_findings
+      - run_results
+    output_keys:
+      - final_report
+    tools: []
+    retry_policy:
+      max_attempts: 1
+      backoff_seconds: 0
+    human_approval: false
+
+edges:
+  - source: doc_reader
+    target: source_reader
+  - source: source_reader
+    target: variable_extractor
+  - source: variable_extractor
+    target: variable_classifier
+  - source: variable_classifier
+    target: domain_generator
+  - source: domain_generator
+    target: constraint_builder
+  - source: constraint_builder
+    target: tnt_cli_reducer
+  - source: tnt_cli_reducer
+    target: test_writer
+  - source: test_writer
+    target: test_validator
+  - source: test_validator
+    target: test_runner
+  - source: test_runner
+    target: report_generator
