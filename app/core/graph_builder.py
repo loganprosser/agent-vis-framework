@@ -8,6 +8,7 @@ from app.nodes.constraint_builder import ConstraintBuilderNode
 from app.nodes.doc_reader import DocReaderNode
 from app.nodes.domain_generator import DomainGeneratorNode
 from app.nodes.mcp_discovery import McpDiscoveryNode
+from app.nodes.mcp_call import McpCallNode
 from app.nodes.report_generator import ReportGeneratorNode
 from app.nodes.source_reader import SourceReaderNode
 from app.nodes.test_runner import TestRunnerNode
@@ -27,6 +28,7 @@ def default_node_registry() -> NodeRegistry:
     registry.register("variable_classifier", VariableClassifierNode)
     registry.register("domain_generator", DomainGeneratorNode)
     registry.register("mcp_discovery", McpDiscoveryNode)
+    registry.register("mcp_call", McpCallNode)
     registry.register("constraint_builder", ConstraintBuilderNode)
     registry.register("tnt_cli_reducer", TntCliReducerNode)
     registry.register("test_writer", TestWriterNode)

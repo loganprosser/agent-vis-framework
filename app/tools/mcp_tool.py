@@ -31,4 +31,13 @@ class McpTool(Tool):
                 return ToolResult(ok=False, error=f"Unsupported MCP action: {action}")
         except Exception as exc:  # noqa: BLE001 - normalize MCP failures.
             return ToolResult(ok=False, error=str(exc))
+
+        is_error = data.get("isError", False) if isinstance(data, dict) else False
+        if is_error:
+            content = data.get("content", [])
+            error_text = ""
+            if isinstance(content, list) and content:
+                error_text = content[0].get("text", str(content[0])) if isinstance(content[0], dict) else str(content[0])
+            return ToolResult(ok=False, data=data, error=error_text or "MCP tool returned an error", logs=[f"McpTool {self.tool_id}: {action} returned error."])
+
         return ToolResult(data=data, logs=[f"McpTool {self.tool_id} completed {action}."])

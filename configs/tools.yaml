@@ -44,3 +44,9 @@ tools:
     config:
       allowed_commands:
         - pytest
+
+  - id: testforge_tnt_mcp
+    type: mcp
+    enabled: true
+    config:
+      server_id: testforge_tnt

@@ -10,3 +10,14 @@ servers:
     cwd: "{project_root}"
     env: {}
     timeout_seconds: 10
+
+  - id: testforge_tnt
+    name: TestForge TNT MCP
+    transport: stdio
+    enabled: true
+    command:
+      - "node"
+      - "{env:TESTFORGE_MCP_ENTRY}"
+    cwd: "{env:TESTFORGE_REPO_DIR}"
+    env: {}
+    timeout_seconds: 30
