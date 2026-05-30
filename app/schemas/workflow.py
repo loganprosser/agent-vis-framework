@@ -16,6 +16,7 @@ class NodeConfig(BaseModel):
     model: str | None = None
     provider: str | None = None
     system_prompt: str = ""
+    system_prompt_file: str | None = None
     input_keys: list[str] = Field(default_factory=list)
     output_keys: list[str] = Field(default_factory=list)
     tools: list[str] = Field(default_factory=list)
@@ -62,7 +63,7 @@ class WorkflowConfig(BaseModel):
 
 class ModelProviderConfig(BaseModel):
     id: str
-    type: Literal["mock", "openai", "anthropic", "ibm", "local"]
+    type: Literal["mock", "openai", "anthropic", "ibm", "litellm", "local"]
     default_model: str
     config: dict[str, Any] = Field(default_factory=dict)
 

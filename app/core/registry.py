@@ -25,7 +25,8 @@ class ModelRegistry:
             "mock": lambda config: MockModelProvider(config.id, config.default_model, config.config),
             "openai": lambda config: OpenAIModelProvider(config.id, config.default_model, config.config),
             "anthropic": lambda config: AnthropicModelProvider(config.id, config.default_model, config.config),
-            "ibm": lambda config: MockModelProvider(config.id, config.default_model, config.config),
+            "ibm": lambda config: OpenAIModelProvider(config.id, config.default_model, config.config),
+            "litellm": lambda config: OpenAIModelProvider(config.id, config.default_model, config.config),
             "local": lambda config: MockModelProvider(config.id, config.default_model, config.config),
         }
         self._providers: dict[str, ModelProvider] = {}

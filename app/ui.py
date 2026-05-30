@@ -16,6 +16,15 @@ INDEX_HTML = """
         const systemTheme = window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
         document.documentElement.dataset.theme = savedTheme || systemTheme || "dark";
       })();
+      // Load marked.js async — don't block page init if CDN is down
+      var marked = null;
+      (function(){
+        var s = document.createElement("script");
+        s.src = "https://cdn.jsdelivr.net/npm/marked@12/marked.min.js";
+        s.onload = function(){ marked = window.marked; };
+        s.onerror = function(){ console.warn("marked.js CDN unavailable — MD preview disabled"); };
+        document.head.appendChild(s);
+      })();
     </script>
     <style>
       :root {
@@ -471,6 +480,109 @@ INDEX_HTML = """
         }
         .canvas-shell { height: 620px; }
       }
+      /* --- MD Editor Overlay --- */
+      #md-editor-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        background: var(--bg);
+        display: grid;
+        grid-template-rows: auto 1fr;
+      }
+      #md-editor-overlay[hidden] {
+        display: none;
+      }
+      .md-editor-topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        min-height: 56px;
+        padding: 10px 20px;
+        background: var(--topbar);
+        border-bottom: 1px solid var(--line);
+        backdrop-filter: blur(10px);
+      }
+      .md-editor-split {
+        display: grid;
+        grid-template-columns: 1fr 4px 1fr;
+        overflow: hidden;
+        height: 100%;
+      }
+      .md-editor-pane {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        overflow: auto;
+        padding: 16px;
+      }
+      .md-editor-pane label {
+        margin-bottom: 8px;
+      }
+      .md-editor-divider {
+        background: var(--line);
+        cursor: col-resize;
+      }
+      #md-code {
+        min-height: 100%;
+        resize: none;
+        font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+        font-size: 13px;
+        line-height: 1.55;
+        tab-size: 2;
+      }
+      .md-preview-content {
+        overflow: auto;
+        padding: 8px;
+        line-height: 1.6;
+      }
+      .md-preview-content h1, .md-preview-content h2, .md-preview-content h3 {
+        margin-top: 16px;
+        margin-bottom: 8px;
+      }
+      .md-preview-content p { margin: 8px 0; }
+      .md-preview-content code {
+        background: var(--panel-2);
+        padding: 2px 5px;
+        border-radius: 4px;
+        font-size: 12px;
+      }
+      .md-preview-content pre {
+        background: #111827;
+        padding: 12px;
+        border-radius: 7px;
+        overflow-x: auto;
+      }
+      .md-preview-content pre code {
+        background: none;
+        padding: 0;
+      }
+      .md-preview-content ul, .md-preview-content ol {
+        padding-left: 24px;
+      }
+      .md-preview-content blockquote {
+        border-left: 3px solid var(--accent);
+        padding-left: 12px;
+        color: var(--muted);
+      }
+      .md-preview-content table {
+        border-collapse: collapse;
+        margin: 8px 0;
+      }
+      .md-preview-content th, .md-preview-content td {
+        border: 1px solid var(--line);
+        padding: 6px 10px;
+      }
+      .md-preview-content th {
+        background: var(--panel-2);
+      }
+      .prompt-file-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        color: var(--accent);
+        font-size: 10px;
+        font-weight: 700;
+      }
     </style>
   </head>
   <body>
@@ -571,6 +683,13 @@ INDEX_HTML = """
               <label for="node-prompt">System Prompt</label>
               <textarea id="node-prompt"></textarea>
             </div>
+            <div class="field">
+              <label for="node-prompt-file">Prompt File</label>
+              <div class="row">
+                <input id="node-prompt-file" placeholder="prompts/my_node.md" />
+                <button class="secondary" id="open-prompt-editor" type="button">Edit in MD Editor</button>
+              </div>
+            </div>
             <div class="row">
               <div class="field" style="flex:1">
                 <label for="node-inputs">Input Keys</label>
@@ -631,6 +750,30 @@ INDEX_HTML = """
       </aside>
     </main>
 
+    <div id="md-editor-overlay" hidden>
+      <header class="md-editor-topbar">
+        <div class="row">
+          <span id="md-editor-title">Prompt Editor</span>
+          <span id="md-editor-file" class="subtle"></span>
+        </div>
+        <div class="row">
+          <button class="primary" id="md-save-button" type="button">Save</button>
+          <button class="secondary" id="md-back-button" type="button">Back to Workflow</button>
+        </div>
+      </header>
+      <div class="md-editor-split">
+        <div class="md-editor-pane">
+          <label>Markdown</label>
+          <textarea id="md-code" spellcheck="false"></textarea>
+        </div>
+        <div class="md-editor-divider"></div>
+        <div class="md-editor-pane">
+          <label>Preview</label>
+          <div id="md-preview" class="md-preview-content"></div>
+        </div>
+      </div>
+    </div>
+
     <script>
       const NODE_W = 264;
       const NODE_H = 122;
@@ -670,6 +813,7 @@ INDEX_HTML = """
         nodeProvider: $("node-provider"),
         nodeModel: $("node-model"),
         nodePrompt: $("node-prompt"),
+        nodePromptFile: $("node-prompt-file"),
         nodeInputs: $("node-inputs"),
         nodeOutputs: $("node-outputs"),
         nodeToolsSelected: $("node-tools-selected"),
@@ -730,6 +874,7 @@ INDEX_HTML = """
           model: node.model || "mock-deterministic",
           provider: node.provider || "mock",
           system_prompt: node.system_prompt || "",
+          system_prompt_file: node.system_prompt_file || null,
           input_keys: node.input_keys || [],
           output_keys: node.output_keys || [],
           tools: node.tools || [],
@@ -852,7 +997,7 @@ INDEX_HTML = """
                 ${node.tools.slice(0, 2).map((tool) => `<span class="chip">${escapeHtml(tool)}</span>`).join("")}
                 ${node.human_approval ? `<span class="chip approval">approval</span>` : ""}
               </div>
-              <div class="subtle">${escapeHtml((node.system_prompt || "No prompt yet.").slice(0, 86))}</div>
+              <div class="subtle">${node.system_prompt_file ? '<span class="prompt-file-indicator">MD</span> ' + escapeHtml(node.system_prompt_file) : escapeHtml((node.system_prompt || "No prompt yet.").slice(0, 86))}</div>
             </div>
           `;
           element.onclick = (event) => {
@@ -964,7 +1109,8 @@ INDEX_HTML = """
           els.nodeModel.appendChild(opt);
         }
 
-        els.nodePrompt.value = node.system_prompt || "";
+        els.nodePrompt.value = node.resolved_system_prompt || node.system_prompt || "";
+        els.nodePromptFile.value = node.system_prompt_file || "";
         els.nodeInputs.value = node.input_keys.join(", ");
         els.nodeOutputs.value = node.output_keys.join(", ");
 
@@ -1157,6 +1303,7 @@ INDEX_HTML = """
         node.provider = els.nodeProvider.value || null;
         node.model = els.nodeModel.value || null;
         node.system_prompt = els.nodePrompt.value;
+        node.system_prompt_file = els.nodePromptFile.value || null;
         node.input_keys = csv(els.nodeInputs.value);
         node.output_keys = csv(els.nodeOutputs.value);
         node.tools = [...els.nodeToolsSelected.querySelectorAll(".chip-remove[data-remove-tool]"), ...els.nodeMcpsSelected.querySelectorAll(".chip-remove[data-remove-mcp]")].map((el) => el.dataset.removeTool || el.dataset.removeMcp);
@@ -1235,9 +1382,9 @@ INDEX_HTML = """
           model: "mock-deterministic",
           provider: "mock",
           system_prompt: "",
+          system_prompt_file: null,
           input_keys: [],
-          output_keys: [],
-          tools: [],
+          output_keys: [],          tools: [],
           mcps: [],
           retry_policy: {max_attempts: 1, backoff_seconds: 0},
           human_approval: false,
@@ -1468,6 +1615,7 @@ INDEX_HTML = """
         els.nodeId,
         els.nodeType,
         els.nodePrompt,
+        els.nodePromptFile,
         els.nodeInputs,
         els.nodeOutputs,
       ].forEach((input) => {
@@ -1556,6 +1704,90 @@ INDEX_HTML = """
       $("theme-button").onclick = toggleTheme;
       $("docs-button").onclick = () => window.open("/docs", "_blank");
       applyTheme(document.documentElement.dataset.theme || "dark");
+
+      // --- Markdown editor ---
+      let mdEditorState = { nodeId: null, promptFile: null };
+
+      function openMdEditor(nodeId) {
+        const node = workflow.nodes.find(n => n.id === nodeId);
+        if (!node) return;
+        mdEditorState.nodeId = nodeId;
+        mdEditorState.promptFile = node.system_prompt_file || null;
+        const proposedFile = node.system_prompt_file || "prompts/" + node.id + ".md";
+        if (node.resolved_system_prompt) {
+          $("md-code").value = node.resolved_system_prompt;
+        } else {
+          $("md-code").value = node.system_prompt || "";
+        }
+        $("md-editor-title").textContent = "Prompt: " + node.id;
+        $("md-editor-file").textContent = mdEditorState.promptFile || proposedFile;
+        renderMdPreview();
+        $("md-editor-overlay").hidden = false;
+      }
+
+      function closeMdEditor() {
+        $("md-editor-overlay").hidden = true;
+        mdEditorState.nodeId = null;
+        mdEditorState.promptFile = null;
+        renderAll();
+      }
+
+      function renderMdPreview() {
+        const code = $("md-code").value;
+        if (!code) { $("md-preview").innerHTML = ""; return; }
+        try {
+          if (marked && marked.parse) {
+            $("md-preview").innerHTML = marked.parse(code);
+          } else {
+            $("md-preview").innerHTML = "<pre>" + escapeHtml(code) + "</pre>";
+          }
+        } catch (e) {
+          $("md-preview").innerHTML = "<pre>" + escapeHtml(code) + "</pre>";
+        }
+      }
+
+      async function saveMdPrompt() {
+        const node = workflow.nodes.find(n => n.id === mdEditorState.nodeId);
+        if (!node) return;
+        const content = $("md-code").value;
+        const promptFile = node.system_prompt_file || "prompts/" + node.id + ".md";
+        await api("/prompts/" + promptFile, {
+          method: "PUT",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({ content: content }),
+        });
+        node.system_prompt_file = promptFile;
+        node.system_prompt = content;
+        mdEditorState.promptFile = promptFile;
+        $("md-editor-file").textContent = promptFile;
+        setStatus("Saved prompt: " + promptFile);
+      }
+
+      $("md-code").oninput = renderMdPreview;
+      $("md-save-button").onclick = () => saveMdPrompt().catch(e => setStatus(e.message));
+      $("md-back-button").onclick = closeMdEditor;
+      $("open-prompt-editor").onclick = () => {
+        const node = getSelectedNode();
+        if (node) openMdEditor(node.id);
+      };
+
+      // MD editor divider drag
+      let mdDividerDrag = null;
+      const mdDivider = $("md-editor-overlay").querySelector(".md-editor-divider");
+      mdDivider.onpointerdown = (e) => {
+        const split = e.target.parentElement;
+        mdDividerDrag = { startX: e.clientX, startLeft: split.children[0].offsetWidth };
+        e.target.setPointerCapture(e.pointerId);
+      };
+      document.addEventListener("pointermove", (e) => {
+        if (!mdDividerDrag) return;
+        const split = $("md-editor-overlay").querySelector(".md-editor-split");
+        const newLeft = mdDividerDrag.startLeft + (e.clientX - mdDividerDrag.startX);
+        const total = split.offsetWidth;
+        const pct = Math.max(20, Math.min(80, (newLeft / total) * 100));
+        split.style.gridTemplateColumns = pct + "% 4px " + (100 - pct) + "%";
+      });
+      document.addEventListener("pointerup", () => { mdDividerDrag = null; });
       els.edges.onclick = () => {
         selectedEdgeIndex = null;
         renderAll();

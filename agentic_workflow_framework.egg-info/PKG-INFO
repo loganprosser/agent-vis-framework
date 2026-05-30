@@ -1,0 +1,17 @@
+Metadata-Version: 2.4
+Name: agentic-workflow-framework
+Version: 0.1.0
+Summary: Config-driven FastAPI + LangGraph framework for reusable multi-agent workflows.
+Requires-Python: >=3.11
+Requires-Dist: fastapi>=0.115.0
+Requires-Dist: uvicorn[standard]>=0.30.0
+Requires-Dist: langgraph>=0.2.0
+Requires-Dist: pydantic>=2.8.0
+Requires-Dist: pyyaml>=6.0.0
+Requires-Dist: typing-extensions>=4.12.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.23.0; extra == "dev"
+Requires-Dist: httpx>=0.27.0; extra == "dev"
+Provides-Extra: litellm
+Requires-Dist: openai>=1.0.0; extra == "litellm"
