@@ -1,0 +1,70 @@
+# --------------------
+# Python
+# --------------------
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+*.egg-info/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# --------------------
+# Node / frontend
+# --------------------
+node_modules/
+frontend/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+frontend/dist/
+frontend/.vite/
+
+# --------------------
+# Local runtime files
+# --------------------
+*.log
+*.pid
+.server.log
+.server.pid
+.frontend.log
+.frontend.pid
+
+# App-generated run/db state
+.runs/
+*.sqlite
+*.sqlite3
+*.db
+
+# --------------------
+# Env / secrets
+# --------------------
+.env
+.env.*
+!.env.example
+
+# --------------------
+# OS / editor
+# --------------------
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# --------------------
+# Git internals should never be copied into repo contents
+# --------------------
+.git/
