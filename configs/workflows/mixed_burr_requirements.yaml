@@ -1,0 +1,49 @@
+name: mixed_burr_requirements
+version: 0.1.0
+description: Run normal workflow nodes before and after a tiny Burr requirements subsystem.
+entrypoint: requirements_input
+
+nodes:
+  - id: requirements_input
+    type: mock_requirements_input
+    provider: mock
+    model: mock-deterministic
+    output_keys:
+      - raw_requirements
+    tools: []
+
+  - id: refine_requirements
+    type: burr_subsystem
+    provider: mock
+    model: mock-deterministic
+    input_keys:
+      - requirements_input
+    output_keys:
+      - structured_requirements
+    tools: []
+    config:
+      app_module: app.subsystems.requirements_burr_app
+      app_factory: build_requirements_app
+      input_map:
+        raw_requirements: node_outputs.requirements_input.raw_requirements
+      output_map:
+        structured_requirements: structured_requirements
+      halt_after:
+        - refine_requirements
+
+  - id: requirements_report
+    type: requirements_report
+    provider: mock
+    model: mock-deterministic
+    input_keys:
+      - refine_requirements
+    output_keys:
+      - structured_requirements
+      - final_report
+    tools: []
+
+edges:
+  - source: requirements_input
+    target: refine_requirements
+  - source: refine_requirements
+    target: requirements_report

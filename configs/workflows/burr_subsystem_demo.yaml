@@ -1,0 +1,35 @@
+name: burr_subsystem_demo
+version: 0.1.0
+description: Run a tiny Burr application as one workflow node.
+entrypoint: greet_with_burr
+
+nodes:
+  - id: greet_with_burr
+    type: burr_subsystem
+    provider: mock
+    model: mock-deterministic
+    input_keys:
+      - message
+    output_keys:
+      - greeting
+      - status
+    tools: []
+    retry_policy:
+      max_attempts: 1
+      backoff_seconds: 0
+    human_approval: false
+    config:
+      app_module: app.subsystems.example_burr_app
+      app_factory: build_example_app
+      input_map:
+        message: inputs.message
+      output_map:
+        greeting: greeting
+        status: status
+      halt_after:
+        - greet
+      ui:
+        x: 180
+        y: 260
+
+edges: []

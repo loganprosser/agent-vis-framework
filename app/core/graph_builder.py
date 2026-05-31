@@ -6,11 +6,14 @@ from app.core.registry import ModelRegistry, NodeRegistry, ToolRegistry
 from app.core.state import WorkflowState
 from app.core.config_loader import ConfigLoader
 from app.nodes.constraint_builder import ConstraintBuilderNode
+from app.nodes.burr_subsystem import BurrSubsystemNode
 from app.nodes.doc_reader import DocReaderNode
 from app.nodes.domain_generator import DomainGeneratorNode
 from app.nodes.mcp_call import McpCallNode
 from app.nodes.mcp_discovery import McpDiscoveryNode
+from app.nodes.mock_requirements_input import MockRequirementsInputNode
 from app.nodes.report_generator import ReportGeneratorNode
+from app.nodes.requirements_report import RequirementsReportNode
 from app.nodes.source_reader import SourceReaderNode
 from app.nodes.test_runner import TestRunnerNode
 from app.nodes.test_validator import TestValidatorNode
@@ -23,6 +26,7 @@ from app.schemas.workflow import WorkflowConfig
 
 def default_node_registry() -> NodeRegistry:
     registry = NodeRegistry()
+    registry.register("burr_subsystem", BurrSubsystemNode)
     registry.register("doc_reader", DocReaderNode)
     registry.register("source_reader", SourceReaderNode)
     registry.register("variable_extractor", VariableExtractorNode)
@@ -30,12 +34,14 @@ def default_node_registry() -> NodeRegistry:
     registry.register("domain_generator", DomainGeneratorNode)
     registry.register("mcp_discovery", McpDiscoveryNode)
     registry.register("mcp_call", McpCallNode)
+    registry.register("mock_requirements_input", MockRequirementsInputNode)
     registry.register("constraint_builder", ConstraintBuilderNode)
     registry.register("tnt_cli_reducer", TntCliReducerNode)
     registry.register("test_writer", TestWriterNode)
     registry.register("test_validator", TestValidatorNode)
     registry.register("test_runner", TestRunnerNode)
     registry.register("report_generator", ReportGeneratorNode)
+    registry.register("requirements_report", RequirementsReportNode)
     return registry
 
 

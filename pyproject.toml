@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Config-driven FastAPI + LangGraph framework for reusable multi-agent workflows."
 requires-python = ">=3.11"
 dependencies = [
+    "apache-burr>=0.30.0",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
     "langgraph>=0.2.0",

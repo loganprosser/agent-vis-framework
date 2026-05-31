@@ -266,11 +266,32 @@ Validation lives in `app/schemas/workflow.py`.
 
 1. Create a node class in `app/nodes/your_node.py`.
 2. Subclass `BaseNode`.
-3. Implement `async def run(self, state) -> dict`.
+3. Implement `async def run(self, state) -> dict` for a simple node, or override `async def execute(self, context) -> NodeResult` for the typed plugin interface.
 4. Register the type in `default_node_registry()` in `app/core/graph_builder.py`.
 5. Use the new `type` in workflow YAML.
 
 Nodes should use `self.ask_model(...)` for model calls and `self.tools["tool_id"].run(...)` for tools. This keeps provider and MCP details out of node logic.
+
+## Run A Burr Subsystem
+
+Use `burr_subsystem` when one workflow node should run an internal Burr application:
+
+```yaml
+- id: greet_with_burr
+  type: burr_subsystem
+  input_keys: [message]
+  output_keys: [greeting]
+  config:
+    app_module: app.subsystems.example_burr_app
+    app_factory: build_example_app
+    input_map:
+      message: inputs.message
+    output_map:
+      greeting: greeting
+    halt_after: [greet]
+```
+
+The configured factory may return a Burr `ApplicationBuilder` or a built application. Use `terminal_states` instead of `halt_after` when the child application should stop after its state `status` reaches one of the configured values. The selected outputs become the node output, and the serialized child state is stored in the node artifact.
 
 ## Add A New Model Provider
 

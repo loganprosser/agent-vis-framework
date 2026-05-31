@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-from abc import ABC, abstractmethod
+from abc import ABC
 from typing import Any
 
 from app.core.state import WorkflowState
 from app.models.base import ModelProvider, ModelRequest
+from app.schemas.node_io import NodeContext, NodeResult
 from app.schemas.workflow import NodeConfig
 from app.tools.base import Tool
 
@@ -34,8 +35,8 @@ class BaseNode(ABC):
 
         for attempt in range(1, self.config.retry_policy.max_attempts + 1):
             try:
-                output = await self.run(state)
-                return self._merge_success(state, output, logs, approvals)
+                result = await self.execute(self.create_context(state))
+                return self._merge_success(state, result, logs, approvals)
             except Exception as exc:  # noqa: BLE001 - capture node errors into workflow state.
                 logs.append(f"{self.config.id}: attempt {attempt} failed: {exc}")
                 if attempt >= self.config.retry_policy.max_attempts:
@@ -46,9 +47,24 @@ class BaseNode(ABC):
 
         return self._merge_error(state, logs, errors, approvals)
 
-    @abstractmethod
-    async def run(self, state: WorkflowState) -> dict[str, Any]:
-        """Return this node's output payload."""
+    async def execute(self, context: NodeContext) -> NodeResult:
+        """Execute a node and normalize legacy dictionary outputs."""
+
+        output = await self.run(context.state)
+        if isinstance(output, NodeResult):
+            return output
+        return NodeResult(values=output)
+
+    async def run(self, state: WorkflowState) -> dict[str, Any] | NodeResult:
+        """Return this node's output payload.
+
+        Existing nodes implement this state-based hook. New execution layers can
+        override execute() when they need the typed NodeContext boundary.
+        """
+        raise NotImplementedError(f"{type(self).__name__} must implement execute() or run().")
+
+    def create_context(self, state: WorkflowState) -> NodeContext:
+        return NodeContext(node_id=self.config.id, state=state, values=self.context(state))
 
     def context(self, state: WorkflowState) -> dict[str, Any]:
         node_outputs = state.get("node_outputs", {})
@@ -78,14 +94,16 @@ class BaseNode(ABC):
     def _merge_success(
         self,
         state: WorkflowState,
-        output: dict[str, Any],
+        result: NodeResult,
         logs: list[str],
         approvals: dict[str, Any],
     ) -> WorkflowState:
+        output = result.values
         node_outputs = dict(state.get("node_outputs", {}))
         artifacts = dict(state.get("artifacts", {}))
         node_outputs[self.config.id] = output
-        artifacts[self.config.id] = output
+        artifacts[self.config.id] = output if result.artifact is None else result.artifact
+        logs.extend(result.logs)
         logs.append(f"{self.config.id}: completed")
 
         next_state: WorkflowState = dict(state)

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
 
 from app.models.anthropic_provider import AnthropicModelProvider
 from app.models.base import ModelProvider
 from app.models.mock_provider import MockModelProvider
 from app.models.openai_provider import OpenAIModelProvider
+from app.nodes.base import BaseNode
 from app.schemas.workflow import McpServerConfig, ModelProviderConfig, ToolConfig
 from app.tools.base import Tool
 from app.tools.mcp_tool import McpTool
@@ -16,7 +16,7 @@ from app.tools.tnt_cli_tool import TntCliTool
 
 ModelFactory = Callable[[ModelProviderConfig], ModelProvider]
 ToolFactory = Callable[[ToolConfig], Tool]
-NodeFactory = Callable[..., Any]
+NodeFactory = Callable[..., BaseNode]
 
 
 class ModelRegistry:
@@ -89,9 +89,12 @@ class NodeRegistry:
     def register(self, node_type: str, factory: NodeFactory) -> None:
         self._factories[node_type] = factory
 
-    def create(self, node_type: str, **kwargs: Any) -> Any:
+    def create(self, node_type: str, **kwargs: object) -> BaseNode:
         try:
             factory = self._factories[node_type]
         except KeyError as exc:
             raise ValueError(f"Unknown node type: {node_type}") from exc
         return factory(**kwargs)
+
+    def registered_types(self) -> list[str]:
+        return sorted(self._factories)
