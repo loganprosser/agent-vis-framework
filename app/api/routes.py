@@ -17,6 +17,10 @@ class RunRequest(BaseModel):
     inputs: dict[str, Any] = Field(default_factory=dict)
 
 
+class PromptContent(BaseModel):
+    content: str
+
+
 def build_registries(config_loader: ConfigLoader | None = None) -> tuple[ModelRegistry, ToolRegistry]:
     config_loader = config_loader or ConfigLoader()
     model_registry = ModelRegistry()
@@ -67,15 +71,27 @@ def create_router(
     async def get_workflow(workflow_name: str) -> dict[str, Any]:
         if workflow_name not in config_loader.list_workflows():
             raise HTTPException(status_code=404, detail=f"Workflow not found: {workflow_name}")
-        return config_loader.load_workflow(workflow_name).model_dump()
+        workflow = config_loader.load_workflow(workflow_name)
+        data = workflow.model_dump(exclude_none=True)
+        for node_data in data.get("nodes", []):
+            if node_data.get("system_prompt_file"):
+                node_config = next(n for n in workflow.nodes if n.id == node_data["id"])
+                node_data["resolved_system_prompt"] = config_loader.resolve_system_prompt(node_config)
+        return data
 
     @router.put("/workflows/{workflow_name}")
     async def save_workflow(workflow_name: str, workflow: WorkflowConfig) -> dict[str, Any]:
         try:
+            for node in workflow.nodes:
+                if node.system_prompt_file and node.system_prompt:
+                    try:
+                        config_loader.save_prompt(node.system_prompt_file, node.system_prompt)
+                    except (ValueError, OSError) as exc:
+                        raise HTTPException(status_code=400, detail=str(exc)) from exc
             saved = config_loader.save_workflow(workflow_name, workflow)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return {"workflow": saved.model_dump(), "saved": True}
+        return {"workflow": saved.model_dump(exclude_none=True), "saved": True}
 
     @router.post("/workflows/validate")
     async def validate_workflow(workflow: WorkflowConfig) -> dict[str, Any]:
@@ -93,7 +109,7 @@ def create_router(
         try:
             workflow = config_loader.load_workflow(workflow_name)
             model_registry, tool_registry = build_registries(config_loader)
-            graph = GraphBuilder(model_registry, tool_registry).compile(workflow)
+            graph = GraphBuilder(model_registry, tool_registry, config_loader=config_loader).compile(workflow)
             final_state = await graph.ainvoke(state)
         except Exception as exc:  # noqa: BLE001 - convert framework errors into run records.
             return run_store.mark_failed(run.run_id, str(exc), state)
@@ -106,6 +122,36 @@ def create_router(
         if run is None:
             raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
         return run
+
+    # --- Prompt file endpoints ---
+
+    @router.get("/prompts")
+    async def list_prompts() -> dict[str, list[str]]:
+        return {"prompts": config_loader.list_prompts()}
+
+    @router.get("/prompts/{prompt_file:path}")
+    async def get_prompt(prompt_file: str) -> dict[str, str]:
+        try:
+            content = config_loader.load_prompt(prompt_file)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {"file": prompt_file, "content": content}
+
+    @router.put("/prompts/{prompt_file:path}")
+    async def save_prompt(prompt_file: str, body: PromptContent) -> dict[str, Any]:
+        try:
+            saved = config_loader.save_prompt(prompt_file, body.content)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"file": saved, "saved": True}
+
+    @router.delete("/prompts/{prompt_file:path}")
+    async def delete_prompt(prompt_file: str) -> dict[str, Any]:
+        try:
+            config_loader.delete_prompt(prompt_file)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {"deleted": True}
 
     return router
 

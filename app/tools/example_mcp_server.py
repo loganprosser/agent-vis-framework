@@ -24,25 +24,35 @@ TOOLS = [
 
 
 def read_message() -> dict[str, Any] | None:
-    headers: dict[str, str] = {}
-    while True:
-        line = sys.stdin.buffer.readline()
-        if not line:
-            return None
-        decoded = line.decode("ascii").strip()
-        if not decoded:
-            break
-        key, _, value = decoded.partition(":")
-        headers[key.lower()] = value.strip()
-    content_length = int(headers.get("content-length", "0"))
-    if content_length <= 0:
+    line = sys.stdin.buffer.readline()
+    if not line:
         return None
-    return json.loads(sys.stdin.buffer.read(content_length).decode("utf-8"))
+    decoded = line.decode("utf-8", errors="replace").strip()
+    if not decoded:
+        return None
+    if decoded.startswith("Content-Length:"):
+        headers: dict[str, str] = {}
+        key, _, value = decoded.partition(":")
+        headers[key.lower().strip()] = value.strip()
+        while True:
+            next_line = sys.stdin.buffer.readline()
+            if not next_line:
+                return None
+            next_decoded = next_line.decode("ascii").strip()
+            if not next_decoded:
+                break
+            nk, _, nv = next_decoded.partition(":")
+            headers[nk.lower().strip()] = nv.strip()
+        content_length = int(headers.get("content-length", "0"))
+        if content_length <= 0:
+            return None
+        return json.loads(sys.stdin.buffer.read(content_length).decode("utf-8"))
+    return json.loads(decoded)
 
 
 def send(message: dict[str, Any]) -> None:
-    payload = json.dumps(message, separators=(",", ":")).encode("utf-8")
-    sys.stdout.buffer.write(f"Content-Length: {len(payload)}\r\n\r\n".encode("ascii") + payload)
+    payload = json.dumps(message) + "\n"
+    sys.stdout.buffer.write(payload.encode("utf-8"))
     sys.stdout.buffer.flush()
 
 

@@ -4,9 +4,11 @@ from langgraph.graph import END, StateGraph
 
 from app.core.registry import ModelRegistry, NodeRegistry, ToolRegistry
 from app.core.state import WorkflowState
+from app.core.config_loader import ConfigLoader
 from app.nodes.constraint_builder import ConstraintBuilderNode
 from app.nodes.doc_reader import DocReaderNode
 from app.nodes.domain_generator import DomainGeneratorNode
+from app.nodes.mcp_call import McpCallNode
 from app.nodes.mcp_discovery import McpDiscoveryNode
 from app.nodes.report_generator import ReportGeneratorNode
 from app.nodes.source_reader import SourceReaderNode
@@ -27,6 +29,7 @@ def default_node_registry() -> NodeRegistry:
     registry.register("variable_classifier", VariableClassifierNode)
     registry.register("domain_generator", DomainGeneratorNode)
     registry.register("mcp_discovery", McpDiscoveryNode)
+    registry.register("mcp_call", McpCallNode)
     registry.register("constraint_builder", ConstraintBuilderNode)
     registry.register("tnt_cli_reducer", TntCliReducerNode)
     registry.register("test_writer", TestWriterNode)
@@ -42,22 +45,32 @@ class GraphBuilder:
         model_registry: ModelRegistry,
         tool_registry: ToolRegistry,
         node_registry: NodeRegistry | None = None,
+        config_loader: ConfigLoader | None = None,
     ) -> None:
         self.model_registry = model_registry
         self.tool_registry = tool_registry
         self.node_registry = node_registry or default_node_registry()
+        self.config_loader = config_loader
 
     def compile(self, workflow: WorkflowConfig):
         graph = StateGraph(WorkflowState)
 
         for node_config in workflow.nodes:
+            effective_config = node_config
+            if node_config.system_prompt_file and self.config_loader:
+                resolved = self.config_loader.resolve_system_prompt(node_config)
+                effective_config = node_config.model_copy(update={
+                    "system_prompt": resolved,
+                    "system_prompt_file": None,
+                })
+
             node = self.node_registry.create(
-                node_config.type,
-                config=node_config,
-                model_provider=self.model_registry.get(node_config.provider),
-                tools=self.tool_registry.many(node_config.tools),
+                effective_config.type,
+                config=effective_config,
+                model_provider=self.model_registry.get(effective_config.provider),
+                tools=self.tool_registry.many(effective_config.tools),
             )
-            graph.add_node(node_config.id, node)
+            graph.add_node(effective_config.id, node)
 
         graph.set_entry_point(workflow.entrypoint)
         sources_with_outgoing_edges: set[str] = set()
