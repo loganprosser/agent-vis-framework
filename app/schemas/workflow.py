@@ -2,12 +2,54 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class RetryPolicy(BaseModel):
     max_attempts: int = Field(default=1, ge=1)
     backoff_seconds: float = Field(default=0.0, ge=0.0)
+
+
+class BurrSubsystemConfig(BaseModel):
+    app_module: str = Field(min_length=1)
+    app_factory: str = Field(min_length=1)
+    input_map: dict[str, str] = Field(default_factory=dict)
+    output_map: dict[str, str] = Field(default_factory=dict)
+    halt_after: list[str] | None = None
+    terminal_states: list[str] | None = None
+    artifact_name: str = Field(default="burr_final_state", min_length=1)
+    timeout_seconds: float | None = Field(default=None, gt=0)
+    fail_on_error: bool = True
+    ui: dict[str, Any] | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("halt_after", "terminal_states", mode="before")
+    @classmethod
+    def normalize_string_list(cls, value):
+        if isinstance(value, str):
+            return [value]
+        return value
+
+    @field_validator("halt_after", "terminal_states")
+    @classmethod
+    def validate_string_list(cls, value: list[str] | None) -> list[str] | None:
+        if value is not None and (not value or any(not item for item in value)):
+            raise ValueError("must contain at least one non-empty string")
+        return value
+
+    @field_validator("input_map", "output_map")
+    @classmethod
+    def validate_mapping_paths(cls, value: dict[str, str]) -> dict[str, str]:
+        if any(not key or not path for key, path in value.items()):
+            raise ValueError("keys and paths must be non-empty strings")
+        return value
+
+    @model_validator(mode="after")
+    def validate_halt_condition(self) -> "BurrSubsystemConfig":
+        if bool(self.halt_after) == bool(self.terminal_states):
+            raise ValueError("set exactly one of halt_after or terminal_states")
+        return self
 
 
 class NodeConfig(BaseModel):
@@ -26,6 +68,12 @@ class NodeConfig(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def validate_typed_config(self) -> "NodeConfig":
+        if self.type == "burr_subsystem":
+            self.config = BurrSubsystemConfig.model_validate(self.config).model_dump(exclude_none=True)
+        return self
 
 
 class EdgeConfig(BaseModel):

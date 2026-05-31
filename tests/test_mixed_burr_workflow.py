@@ -38,6 +38,13 @@ async def test_mixed_workflow_runs_normal_nodes_around_burr_subsystem() -> None:
         "status": "complete",
         "structured_requirements": structured_requirements,
     }
+    assert result["artifacts"]["refine_requirements"]["burr_final_state.json"] == (
+        result["artifacts"]["refine_requirements"]["burr_final_state"]
+    )
+    assert result["artifacts"]["refine_requirements"]["burr_node_metadata.json"]["status"] == (
+        "completed"
+    )
+    assert result["artifacts"]["refine_requirements"]["burr_trace.json"]["source"] == "minimal"
     assert result["node_outputs"]["refine_requirements"]["structured_requirements"] == (
         structured_requirements
     )

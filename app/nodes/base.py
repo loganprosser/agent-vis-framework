@@ -11,6 +11,12 @@ from app.schemas.workflow import NodeConfig
 from app.tools.base import Tool
 
 
+class NodeExecutionError(RuntimeError):
+    def __init__(self, message: str, *, artifact: Any | None = None) -> None:
+        super().__init__(message)
+        self.artifact = artifact
+
+
 class BaseNode(ABC):
     def __init__(
         self,
@@ -26,6 +32,7 @@ class BaseNode(ABC):
         logs = list(state.get("logs", []))
         errors = list(state.get("errors", []))
         approvals = dict(state.get("approvals", {}))
+        error_artifact: Any | None = None
 
         if self.config.human_approval:
             approvals[self.config.id] = {
@@ -38,14 +45,16 @@ class BaseNode(ABC):
                 result = await self.execute(self.create_context(state))
                 return self._merge_success(state, result, logs, approvals)
             except Exception as exc:  # noqa: BLE001 - capture node errors into workflow state.
+                if getattr(exc, "artifact", None) is not None:
+                    error_artifact = exc.artifact
                 logs.append(f"{self.config.id}: attempt {attempt} failed: {exc}")
                 if attempt >= self.config.retry_policy.max_attempts:
                     errors.append({"node_id": self.config.id, "message": str(exc)})
-                    return self._merge_error(state, logs, errors, approvals)
+                    return self._merge_error(state, logs, errors, approvals, error_artifact)
                 if self.config.retry_policy.backoff_seconds:
                     await asyncio.sleep(self.config.retry_policy.backoff_seconds)
 
-        return self._merge_error(state, logs, errors, approvals)
+        return self._merge_error(state, logs, errors, approvals, error_artifact)
 
     async def execute(self, context: NodeContext) -> NodeResult:
         """Execute a node and normalize legacy dictionary outputs."""
@@ -125,7 +134,13 @@ class BaseNode(ABC):
         logs: list[str],
         errors: list[dict[str, Any]],
         approvals: dict[str, Any],
+        artifact: Any | None = None,
     ) -> WorkflowState:
         next_state: WorkflowState = dict(state)
-        next_state.update({"logs": logs, "errors": errors, "approvals": approvals})
+        artifacts = dict(state.get("artifacts", {}))
+        if artifact is not None:
+            artifacts[self.config.id] = artifact
+        next_state.update(
+            {"logs": logs, "errors": errors, "approvals": approvals, "artifacts": artifacts}
+        )
         return next_state

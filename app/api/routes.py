@@ -21,6 +21,32 @@ class PromptContent(BaseModel):
     content: str
 
 
+def export_workflow(
+    workflow: WorkflowConfig,
+    config_loader: ConfigLoader | None = None,
+) -> dict[str, Any]:
+    data = workflow.model_dump(exclude_none=True)
+    nodes_by_id = {node.id: node for node in workflow.nodes}
+    for node_data in data.get("nodes", []):
+        node_config = nodes_by_id[node_data["id"]]
+        if node_data.get("system_prompt_file") and config_loader:
+            node_data["resolved_system_prompt"] = config_loader.resolve_system_prompt(node_config)
+        if node_config.type == "burr_subsystem":
+            node_data["subsystem"] = True
+            node_data["subsystem_metadata"] = {
+                "runtime": "burr",
+                "app_module": node_config.config["app_module"],
+                "app_factory": node_config.config["app_factory"],
+                "has_internal_trace": False,
+                "artifact_names": [
+                    "burr_final_state.json",
+                    "burr_node_metadata.json",
+                    "burr_trace.json",
+                ],
+            }
+    return data
+
+
 def build_registries(config_loader: ConfigLoader | None = None) -> tuple[ModelRegistry, ToolRegistry]:
     config_loader = config_loader or ConfigLoader()
     model_registry = ModelRegistry()
@@ -72,12 +98,7 @@ def create_router(
         if workflow_name not in config_loader.list_workflows():
             raise HTTPException(status_code=404, detail=f"Workflow not found: {workflow_name}")
         workflow = config_loader.load_workflow(workflow_name)
-        data = workflow.model_dump(exclude_none=True)
-        for node_data in data.get("nodes", []):
-            if node_data.get("system_prompt_file"):
-                node_config = next(n for n in workflow.nodes if n.id == node_data["id"])
-                node_data["resolved_system_prompt"] = config_loader.resolve_system_prompt(node_config)
-        return data
+        return export_workflow(workflow, config_loader)
 
     @router.put("/workflows/{workflow_name}")
     async def save_workflow(workflow_name: str, workflow: WorkflowConfig) -> dict[str, Any]:

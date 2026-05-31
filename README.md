@@ -289,9 +289,14 @@ Use `burr_subsystem` when one workflow node should run an internal Burr applicat
     output_map:
       greeting: greeting
     halt_after: [greet]
+    artifact_name: burr_final_state
+    timeout_seconds: 30
+    fail_on_error: true
 ```
 
-The configured factory may return a Burr `ApplicationBuilder` or a built application. Use `terminal_states` instead of `halt_after` when the child application should stop after its state `status` reaches one of the configured values. The selected outputs become the node output, and the serialized child state is stored in the node artifact.
+The configured factory may return a Burr `ApplicationBuilder` or a built application. Set exactly one of `halt_after` or `terminal_states`; use `terminal_states` when the child application should stop after its state `status` reaches one of the configured values. The selected outputs become the node output. Each run stores `burr_final_state.json`, `burr_node_metadata.json`, and `burr_trace.json` in the node artifact bundle. The configured `artifact_name`, which defaults to `burr_final_state`, remains as a convenient state alias. `timeout_seconds` is optional and `fail_on_error` defaults to `true`. Burr config is validated when the workflow loads.
+
+See `configs/workflows/branching_burr_requirements.yaml` for a small Burr subsystem that validates requirements and conditionally routes through an internal repair action.
 
 ## Add A New Model Provider
 

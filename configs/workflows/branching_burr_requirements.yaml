@@ -1,0 +1,38 @@
+name: branching_burr_requirements
+version: 0.1.0
+description: Validate and repair requirements inside a branching Burr subsystem.
+entrypoint: requirements_input
+
+nodes:
+  - id: requirements_input
+    type: mock_requirements_input
+    provider: mock
+    model: mock-deterministic
+    output_keys:
+      - raw_requirements
+    tools: []
+
+  - id: validate_and_structure_requirements
+    type: burr_subsystem
+    provider: mock
+    model: mock-deterministic
+    input_keys:
+      - requirements_input
+    output_keys:
+      - structured_requirements
+      - validation_status
+    tools: []
+    config:
+      app_module: app.subsystems.branching_requirements_burr_app
+      app_factory: build_branching_requirements_app
+      input_map:
+        raw_requirements: node_outputs.requirements_input.raw_requirements
+      output_map:
+        structured_requirements: structured_requirements
+        validation_status: validation_status
+      halt_after:
+        - structure_requirements
+
+edges:
+  - source: requirements_input
+    target: validate_and_structure_requirements
