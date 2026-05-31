@@ -318,6 +318,14 @@ INDEX_HTML = """
       .node.running {
         border-color: var(--violet);
       }
+      .node.subsystem {
+        border-color: var(--violet);
+        background: linear-gradient(145deg, var(--panel), rgba(109, 91, 208, .14));
+      }
+      .node.subsystem.selected {
+        border-color: var(--violet);
+        box-shadow: 0 0 0 3px rgba(167, 139, 250, .22), var(--shadow);
+      }
       .node-head {
         display: flex;
         align-items: center;
@@ -340,6 +348,11 @@ INDEX_HTML = """
       .node:nth-of-type(3n) .node-badge {
         background: #eee9ff;
         color: var(--violet);
+      }
+      .node.subsystem .node-badge {
+        background: #eee9ff;
+        color: var(--violet);
+        font-size: 10px;
       }
       .node-title {
         overflow: hidden;
@@ -412,6 +425,40 @@ INDEX_HTML = """
         color: var(--muted);
         font-size: 12px;
         line-height: 1.4;
+      }
+      .subsystem-panel {
+        display: grid;
+        gap: 8px;
+        border: 1px solid rgba(167, 139, 250, .45);
+        border-radius: 8px;
+        background: rgba(109, 91, 208, .10);
+        padding: 10px;
+      }
+      .subsystem-grid {
+        display: grid;
+        grid-template-columns: minmax(90px, .45fr) minmax(0, 1fr);
+        gap: 5px 8px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .subsystem-grid strong {
+        overflow-wrap: anywhere;
+        color: var(--ink);
+      }
+      .artifact-list {
+        display: grid;
+        gap: 5px;
+      }
+      .artifact-link {
+        color: var(--violet);
+        font-size: 12px;
+        font-weight: 750;
+        overflow-wrap: anywhere;
+      }
+      pre.compact {
+        min-height: 72px;
+        max-height: 180px;
+        font-size: 11px;
       }
       pre {
         max-height: 280px;
@@ -715,6 +762,32 @@ INDEX_HTML = """
               <span>Human approval required</span>
             </label>
             <button class="danger" id="delete-node-button" type="button">Delete Node</button>
+            <div id="subsystem-details" class="subsystem-panel" hidden>
+              <label>Burr Subsystem</label>
+              <div id="subsystem-summary" class="subsystem-grid"></div>
+              <div class="field">
+                <label>Input Map</label>
+                <pre id="subsystem-input-map" class="compact"></pre>
+              </div>
+              <div class="field">
+                <label>Output Map</label>
+                <pre id="subsystem-output-map" class="compact"></pre>
+              </div>
+              <div class="field">
+                <label for="subsystem-topology">Internal Topology JSON</label>
+                <textarea id="subsystem-topology" style="min-height:180px"></textarea>
+                <button class="secondary" id="apply-subsystem-topology" type="button">Apply Internal Topology</button>
+                <span class="subtle">Topology is editable workflow metadata. The Python Burr factory remains the runtime implementation.</span>
+              </div>
+              <div class="field">
+                <label>Artifacts</label>
+                <div id="subsystem-artifacts" class="artifact-list subtle">Run the workflow to inspect artifacts.</div>
+              </div>
+              <div class="field">
+                <label>Subsystem Metadata</label>
+                <pre id="subsystem-metadata" class="compact"></pre>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -789,6 +862,7 @@ INDEX_HTML = """
         ["test_validator", "Val", "Validate tests"],
         ["test_runner", "Run", "Run tests"],
         ["report_generator", "Rpt", "Generate report"],
+        ["burr_subsystem", "SUB", "Run an internal Burr subsystem"],
       ];
 
       const $ = (id) => document.getElementById(id);
@@ -821,6 +895,13 @@ INDEX_HTML = """
         nodeMcpsSelected: $("node-mcps-selected"),
         nodeMcpsAdd: $("node-mcps-add"),
         nodeApproval: $("node-approval"),
+        subsystemDetails: $("subsystem-details"),
+        subsystemSummary: $("subsystem-summary"),
+        subsystemInputMap: $("subsystem-input-map"),
+        subsystemOutputMap: $("subsystem-output-map"),
+        subsystemTopology: $("subsystem-topology"),
+        subsystemArtifacts: $("subsystem-artifacts"),
+        subsystemMetadata: $("subsystem-metadata"),
         edgeList: $("edge-list"),
         clipboardJson: $("clipboard-json"),
         runInput: $("run-input"),
@@ -838,6 +919,7 @@ INDEX_HTML = """
       let canvasWidth = 2400;
       let canvasHeight = 1300;
       let catalog = {providers: [], tools: [], mcps: []};
+      let latestRun = null;
 
       function applyTheme(theme) {
         document.documentElement.dataset.theme = theme;
@@ -919,6 +1001,7 @@ INDEX_HTML = """
 
       async function loadWorkflow(name) {
         workflow = normalizeWorkflow(await api(`/workflows/${name}`));
+        latestRun = null;
         selectedWorkflowName = name;
         selectedNodeId = workflow.nodes[0]?.id || null;
         selectedEdgeIndex = null;
@@ -977,7 +1060,8 @@ INDEX_HTML = """
         els.nodes.innerHTML = "";
         workflow.nodes.forEach((node) => {
           const element = document.createElement("div");
-          element.className = `node ${node.id === selectedNodeId ? "selected" : ""}`;
+          const isSubsystem = node.type === "burr_subsystem";
+          element.className = `node ${isSubsystem ? "subsystem" : ""} ${node.id === selectedNodeId ? "selected" : ""}`;
           element.style.left = `${node.config.ui.x}px`;
           element.style.top = `${node.config.ui.y}px`;
           element.dataset.nodeId = node.id;
@@ -985,7 +1069,7 @@ INDEX_HTML = """
             <div class="port in" data-target-port="${escapeHtml(node.id)}" title="Input"></div>
             <div class="port out" data-source-port="${escapeHtml(node.id)}" title="Output"></div>
             <div class="node-head" data-drag-node="${escapeHtml(node.id)}">
-              <div class="node-badge">${escapeHtml(shortType(node.type))}</div>
+              <div class="node-badge">${escapeHtml(isSubsystem ? "SUB" : shortType(node.type))}</div>
               <div style="min-width:0">
                 <div class="node-title">${escapeHtml(node.id)}</div>
                 <div class="node-type">${escapeHtml(node.type)} · ${escapeHtml(node.provider || "default")}</div>
@@ -994,10 +1078,11 @@ INDEX_HTML = """
             <div class="node-body">
               <div class="node-chip-row">
                 ${node.model ? `<span class="chip">${escapeHtml(node.model)}</span>` : ""}
+                ${isSubsystem ? `<span class="chip approval">Burr subsystem</span>` : ""}
                 ${node.tools.slice(0, 2).map((tool) => `<span class="chip">${escapeHtml(tool)}</span>`).join("")}
                 ${node.human_approval ? `<span class="chip approval">approval</span>` : ""}
               </div>
-              <div class="subtle">${node.system_prompt_file ? '<span class="prompt-file-indicator">MD</span> ' + escapeHtml(node.system_prompt_file) : escapeHtml((node.system_prompt || "No prompt yet.").slice(0, 86))}</div>
+              <div class="subtle">${isSubsystem ? escapeHtml(node.config.app_factory || "Configure app_factory") : node.system_prompt_file ? '<span class="prompt-file-indicator">MD</span> ' + escapeHtml(node.system_prompt_file) : escapeHtml((node.system_prompt || "No prompt yet.").slice(0, 86))}</div>
             </div>
           `;
           element.onclick = (event) => {
@@ -1163,6 +1248,47 @@ INDEX_HTML = """
         });
 
         els.nodeApproval.checked = node.human_approval;
+        renderSubsystemDetails(node);
+      }
+
+      function renderSubsystemDetails(node) {
+        const isSubsystem = node.type === "burr_subsystem";
+        els.subsystemDetails.hidden = !isSubsystem;
+        if (!isSubsystem) return;
+        const artifactBundle = latestRun?.state?.artifacts?.[node.id] || {};
+        const metadata = latestRun?.state?._subsystems?.[node.id]
+          || artifactBundle["burr_node_metadata.json"]
+          || {};
+        const summary = [
+          ["Node ID", node.id],
+          ["Node Type", node.type],
+          ["Runtime", metadata.runtime || "burr"],
+          ["App Module", node.config.app_module || metadata.app_module || "Not configured"],
+          ["App Factory", node.config.app_factory || metadata.app_factory || "Not configured"],
+          ["Status", metadata.status || "Not run"],
+          ["Terminal State", metadata.terminal_state || "Not available"],
+          ["Halt Reason", metadata.halt_reason || "Not available"],
+        ];
+        els.subsystemSummary.innerHTML = summary
+          .map(([label, value]) => `<span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong>`)
+          .join("");
+        els.subsystemInputMap.textContent = JSON.stringify(node.config.input_map || {}, null, 2);
+        els.subsystemOutputMap.textContent = JSON.stringify(node.config.output_map || {}, null, 2);
+        els.subsystemTopology.value = JSON.stringify(node.config.topology || {
+          entrypoint: "action_1",
+          actions: [{id: "action_1", label: "First action", kind: "agent", reads: [], writes: []}],
+          transitions: [],
+        }, null, 2);
+        els.subsystemMetadata.textContent = Object.keys(metadata).length
+          ? JSON.stringify(metadata, null, 2)
+          : "Run the workflow to inspect subsystem metadata.";
+        const artifactNames = Object.keys(artifactBundle).filter((name) => name.endsWith(".json"));
+        els.subsystemArtifacts.innerHTML = artifactNames.length && latestRun?.run_id
+          ? artifactNames.map((name) => {
+              const href = `/runs/${encodeURIComponent(latestRun.run_id)}/artifacts/${encodeURIComponent(node.id)}/${encodeURIComponent(name)}`;
+              return `<a class="artifact-link" href="${href}" target="_blank" rel="noopener">${escapeHtml(name)}</a>`;
+            }).join("")
+          : "Run the workflow to inspect artifacts.";
       }
 
       function renderEdgeList() {
@@ -1345,8 +1471,10 @@ INDEX_HTML = """
             headers: {"Content-Type": "application/json"},
             body: JSON.stringify(body),
           });
+          latestRun = data;
           els.runOutput.textContent = data.state?.final_report || JSON.stringify(data, null, 2);
           setStatus(`Run ${data.status}: ${data.run_id}`);
+          renderAll();
         } catch (error) {
           els.runOutput.textContent = error.message;
           setStatus("Run failed");
@@ -1376,6 +1504,20 @@ INDEX_HTML = """
           x: els.shell.scrollLeft + Math.min(520, els.shell.clientWidth / 2),
           y: els.shell.scrollTop + Math.min(300, els.shell.clientHeight / 2),
         };
+        const config = type === "burr_subsystem" ? {
+          app_module: "app.subsystems.example_burr_app",
+          app_factory: "build_example_app",
+          input_map: {message: "inputs.message"},
+          output_map: {greeting: "greeting", status: "status"},
+          halt_after: ["greet"],
+          fail_on_error: true,
+          topology: {
+            entrypoint: "greet",
+            actions: [{id: "greet", label: "Create greeting", kind: "agent", reads: ["message"], writes: ["greeting", "status"]}],
+            transitions: [],
+          },
+          ui: {x: viewport.x, y: viewport.y},
+        } : {ui: {x: viewport.x, y: viewport.y}};
         workflow.nodes.push({
           id,
           type,
@@ -1388,7 +1530,7 @@ INDEX_HTML = """
           mcps: [],
           retry_policy: {max_attempts: 1, backoff_seconds: 0},
           human_approval: false,
-          config: {ui: {x: viewport.x, y: viewport.y}},
+          config,
         });
         if (!workflow.entrypoint) workflow.entrypoint = id;
         selectedNodeId = id;
@@ -1680,6 +1822,17 @@ INDEX_HTML = """
       $("reload-button").onclick = () => loadCatalog().then(() => loadWorkflows()).catch((error) => setStatus(error.message));
       $("delete-node-button").onclick = deleteNode;
       $("delete-edge-button").onclick = deleteSelectedEdge;
+      $("apply-subsystem-topology").onclick = () => {
+        const node = getSelectedNode();
+        if (!node || node.type !== "burr_subsystem") return;
+        try {
+          node.config.topology = JSON.parse(els.subsystemTopology.value);
+          renderAll();
+          setStatus("Updated Burr internal topology. Save to persist it.");
+        } catch (error) {
+          setStatus("Invalid internal topology JSON: " + error.message);
+        }
+      };
       $("zoom-in-button").onclick = () => {
         const pivotX = els.shell.scrollLeft + els.shell.clientWidth / 2;
         const pivotY = els.shell.scrollTop + els.shell.clientHeight / 2;

@@ -32,6 +32,45 @@ nodes:
         validation_status: validation_status
       halt_after:
         - structure_requirements
+      topology:
+        entrypoint: validate_requirements
+        actions:
+          - id: validate_requirements
+            label: Validate requirements
+            kind: router
+            description: Decide whether the requirements need repair.
+            reads:
+              - raw_requirements
+            writes:
+              - validation_status
+          - id: repair_requirements
+            label: Repair requirements
+            kind: agent
+            description: Expand incomplete requirements before structuring them.
+            reads:
+              - raw_requirements
+            writes:
+              - raw_requirements
+              - repair_happened
+          - id: structure_requirements
+            label: Structure requirements
+            kind: agent
+            description: Produce the normalized requirements payload.
+            reads:
+              - raw_requirements
+            writes:
+              - structured_requirements
+              - validation_status
+        transitions:
+          - source: validate_requirements
+            target: repair_requirements
+            condition: validation_status == repair_required
+          - source: validate_requirements
+            target: structure_requirements
+            condition: validation_status == valid
+          - source: repair_requirements
+            target: structure_requirements
+            condition: default
 
 edges:
   - source: requirements_input

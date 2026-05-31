@@ -3,6 +3,7 @@ Name: agentic-workflow-framework
 Version: 0.1.0
 Summary: Config-driven FastAPI + LangGraph framework for reusable multi-agent workflows.
 Requires-Python: >=3.11
+Requires-Dist: apache-burr>=0.30.0
 Requires-Dist: fastapi>=0.115.0
 Requires-Dist: uvicorn[standard]>=0.30.0
 Requires-Dist: langgraph>=0.2.0

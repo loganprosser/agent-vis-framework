@@ -16,6 +16,7 @@ class WorkflowState(TypedDict, total=False):
     workflow_name: str
     inputs: dict[str, Any]
     artifacts: dict[str, Any]
+    _subsystems: dict[str, Any]
     node_outputs: dict[str, Any]
     errors: list[dict[str, Any]]
     logs: list[str]
@@ -34,6 +35,7 @@ def initial_state(
         "workflow_name": workflow_name,
         "inputs": inputs,
         "artifacts": {},
+        "_subsystems": {},
         "node_outputs": {},
         "errors": [],
         "logs": [],

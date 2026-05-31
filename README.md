@@ -96,6 +96,8 @@ The editor canvas supports zoom (Ctrl/Cmd + scroll, or the +/−/Fit buttons), p
 
 The right panel shows the selected node's configuration with dropdown selectors for provider and model (populated from `configs/models.yaml`), and separate chip-based selectors for Tools and MCPs (populated from `configs/tools.yaml`). Selected items appear as removable chips — teal for tools, purple for MCPs — with a dropdown to add more. All delete actions require confirmation.
 
+The React Flow editor at port `5173` adds a Burr subsystem studio. It can add a `burr_subsystem` node, edit the Python factory contract, manage an internal action topology, edit reads/writes and conditional transitions, and inspect Burr run artifacts. The embedded editor at port `8000` exposes the same topology as editable JSON.
+
 Stop it:
 
 ```bash
@@ -292,9 +294,20 @@ Use `burr_subsystem` when one workflow node should run an internal Burr applicat
     artifact_name: burr_final_state
     timeout_seconds: 30
     fail_on_error: true
+    topology:
+      entrypoint: greet
+      actions:
+        - id: greet
+          label: Create greeting
+          kind: agent
+          reads: [message]
+          writes: [greeting]
+      transitions: []
 ```
 
 The configured factory may return a Burr `ApplicationBuilder` or a built application. Set exactly one of `halt_after` or `terminal_states`; use `terminal_states` when the child application should stop after its state `status` reaches one of the configured values. The selected outputs become the node output. Each run stores `burr_final_state.json`, `burr_node_metadata.json`, and `burr_trace.json` in the node artifact bundle. The configured `artifact_name`, which defaults to `burr_final_state`, remains as a convenient state alias. `timeout_seconds` is optional and `fail_on_error` defaults to `true`. Burr config is validated when the workflow loads.
+
+`topology` is optional declarative editor metadata inspired by Burr's telemetry application model: an entrypoint, internal actions, and conditional transitions. It is validated and saved with workflow YAML, but the Python factory remains the runtime source of truth. This gives the editor a stable authoring model now and a natural place to attach richer Burr runtime telemetry later.
 
 See `configs/workflows/branching_burr_requirements.yaml` for a small Burr subsystem that validates requirements and conditionally routes through an internal repair action.
 

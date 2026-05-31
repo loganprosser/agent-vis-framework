@@ -28,6 +28,19 @@ nodes:
         status: status
       halt_after:
         - greet
+      topology:
+        entrypoint: greet
+        actions:
+          - id: greet
+            label: Create greeting
+            kind: agent
+            description: Build a greeting from the parent workflow input.
+            reads:
+              - message
+            writes:
+              - greeting
+              - status
+        transitions: []
       ui:
         x: 180
         y: 260

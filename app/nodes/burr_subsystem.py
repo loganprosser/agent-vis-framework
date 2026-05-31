@@ -12,6 +12,12 @@ from app.nodes.subsystem import BaseSubsystemNode
 from app.schemas.node_io import NodeContext, NodeResult
 from app.schemas.workflow import BurrSubsystemConfig
 
+BURR_JSON_ARTIFACT_NAMES = (
+    "burr_final_state.json",
+    "burr_node_metadata.json",
+    "burr_trace.json",
+)
+
 
 @dataclass
 class _ExecutionTracker:
@@ -94,6 +100,7 @@ class BurrSubsystemNode(BaseSubsystemNode):
             values=values,
             logs=[f"{self.config.id}: Burr subsystem completed"],
             artifact=tracker.artifact,
+            subsystem_metadata=self._subsystem_metadata(tracker),
         )
 
     def _load_factory(self):
@@ -184,14 +191,21 @@ class BurrSubsystemNode(BaseSubsystemNode):
         final_state = tracker.latest_state or {}
         metadata = {
             "node_id": self.config.id,
+            "runtime": "burr",
             "app_module": self.burr_config.app_module,
             "app_factory": self.burr_config.app_factory,
             "started_at": tracker.started_at.isoformat() if tracker.started_at else None,
             "finished_at": tracker.finished_at.isoformat() if tracker.finished_at else None,
             "status": status,
+            "terminal_state": final_state.get("status"),
+            "halt_reason": self._halt_reason(status, final_state),
             "duration_ms": self._duration_ms(tracker),
             "input_keys": list(self.burr_config.input_map),
             "output_keys": list(self.burr_config.output_map),
+            "input_map": self.burr_config.input_map,
+            "output_map": self.burr_config.output_map,
+            "has_internal_trace": False,
+            "artifact_names": self._json_artifact_names(),
         }
         return {
             self.burr_config.artifact_name: final_state,
@@ -203,6 +217,22 @@ class BurrSubsystemNode(BaseSubsystemNode):
                 "final_state": final_state,
             },
         }
+
+    def _subsystem_metadata(self, tracker: _ExecutionTracker) -> dict[str, Any]:
+        if tracker.artifact is None:
+            return {}
+        return tracker.artifact["burr_node_metadata.json"]
+
+    def _halt_reason(self, status: str, final_state: Mapping[str, Any]) -> str:
+        if status != "completed":
+            return status
+        if self.burr_config.halt_after:
+            return f"halt_after: {', '.join(self.burr_config.halt_after)}"
+        return f"terminal_state: {final_state.get('status')}"
+
+    @staticmethod
+    def _json_artifact_names() -> list[str]:
+        return list(BURR_JSON_ARTIFACT_NAMES)
 
     @staticmethod
     def _duration_ms(tracker: _ExecutionTracker) -> float | None:
@@ -225,11 +255,13 @@ class BurrSubsystemNode(BaseSubsystemNode):
             else NodeExecutionError(str(exc))
         )
         error.artifact = tracker.artifact
+        error.subsystem_metadata = self._subsystem_metadata(tracker)
         if self.burr_config.fail_on_error:
             raise error
         return NodeResult(
             logs=[f"{self.config.id}: Burr subsystem failed but fail_on_error is false: {error}"],
             artifact=error.artifact,
+            subsystem_metadata=error.subsystem_metadata,
         )
 
     @staticmethod

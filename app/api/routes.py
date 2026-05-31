@@ -10,6 +10,7 @@ from app.core.graph_builder import GraphBuilder
 from app.core.registry import ModelRegistry, ToolRegistry
 from app.core.run_store import RunRecord, create_run_store
 from app.core.state import initial_state
+from app.nodes.burr_subsystem import BURR_JSON_ARTIFACT_NAMES
 from app.schemas.workflow import WorkflowConfig
 
 
@@ -38,11 +39,8 @@ def export_workflow(
                 "app_module": node_config.config["app_module"],
                 "app_factory": node_config.config["app_factory"],
                 "has_internal_trace": False,
-                "artifact_names": [
-                    "burr_final_state.json",
-                    "burr_node_metadata.json",
-                    "burr_trace.json",
-                ],
+                "artifact_names": list(BURR_JSON_ARTIFACT_NAMES),
+                **({"topology": node_config.config["topology"]} if node_config.config.get("topology") else {}),
             }
     return data
 
@@ -143,6 +141,20 @@ def create_router(
         if run is None:
             raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
         return run
+
+    @router.get("/runs/{run_id}/artifacts/{node_id}/{artifact_name}")
+    async def get_run_artifact(run_id: str, node_id: str, artifact_name: str) -> Any:
+        run = run_store.get(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
+        artifacts = (run.state or {}).get("artifacts", {})
+        node_artifacts = artifacts.get(node_id, {})
+        if not isinstance(node_artifacts, dict) or artifact_name not in node_artifacts:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Artifact not found: {node_id}/{artifact_name}",
+            )
+        return node_artifacts[artifact_name]
 
     # --- Prompt file endpoints ---
 

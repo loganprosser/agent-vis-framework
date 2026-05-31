@@ -21,6 +21,7 @@ class NodeResult(BaseModel):
     values: dict[str, Any] = Field(default_factory=dict)
     logs: list[str] = Field(default_factory=list)
     artifact: Any | None = None
+    subsystem_metadata: dict[str, Any] | None = None
 
 
 class NodeInput(BaseModel):

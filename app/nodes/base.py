@@ -12,9 +12,16 @@ from app.tools.base import Tool
 
 
 class NodeExecutionError(RuntimeError):
-    def __init__(self, message: str, *, artifact: Any | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        artifact: Any | None = None,
+        subsystem_metadata: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(message)
         self.artifact = artifact
+        self.subsystem_metadata = subsystem_metadata
 
 
 class BaseNode(ABC):
@@ -33,6 +40,7 @@ class BaseNode(ABC):
         errors = list(state.get("errors", []))
         approvals = dict(state.get("approvals", {}))
         error_artifact: Any | None = None
+        error_subsystem_metadata: dict[str, Any] | None = None
 
         if self.config.human_approval:
             approvals[self.config.id] = {
@@ -47,14 +55,30 @@ class BaseNode(ABC):
             except Exception as exc:  # noqa: BLE001 - capture node errors into workflow state.
                 if getattr(exc, "artifact", None) is not None:
                     error_artifact = exc.artifact
+                if getattr(exc, "subsystem_metadata", None) is not None:
+                    error_subsystem_metadata = exc.subsystem_metadata
                 logs.append(f"{self.config.id}: attempt {attempt} failed: {exc}")
                 if attempt >= self.config.retry_policy.max_attempts:
                     errors.append({"node_id": self.config.id, "message": str(exc)})
-                    return self._merge_error(state, logs, errors, approvals, error_artifact)
+                    return self._merge_error(
+                        state,
+                        logs,
+                        errors,
+                        approvals,
+                        error_artifact,
+                        error_subsystem_metadata,
+                    )
                 if self.config.retry_policy.backoff_seconds:
                     await asyncio.sleep(self.config.retry_policy.backoff_seconds)
 
-        return self._merge_error(state, logs, errors, approvals, error_artifact)
+        return self._merge_error(
+            state,
+            logs,
+            errors,
+            approvals,
+            error_artifact,
+            error_subsystem_metadata,
+        )
 
     async def execute(self, context: NodeContext) -> NodeResult:
         """Execute a node and normalize legacy dictionary outputs."""
@@ -110,8 +134,11 @@ class BaseNode(ABC):
         output = result.values
         node_outputs = dict(state.get("node_outputs", {}))
         artifacts = dict(state.get("artifacts", {}))
+        subsystems = dict(state.get("_subsystems", {}))
         node_outputs[self.config.id] = output
         artifacts[self.config.id] = output if result.artifact is None else result.artifact
+        if result.subsystem_metadata is not None:
+            subsystems[self.config.id] = result.subsystem_metadata
         logs.extend(result.logs)
         logs.append(f"{self.config.id}: completed")
 
@@ -120,6 +147,7 @@ class BaseNode(ABC):
             {
                 "node_outputs": node_outputs,
                 "artifacts": artifacts,
+                "_subsystems": subsystems,
                 "logs": logs,
                 "approvals": approvals,
             }
@@ -135,12 +163,22 @@ class BaseNode(ABC):
         errors: list[dict[str, Any]],
         approvals: dict[str, Any],
         artifact: Any | None = None,
+        subsystem_metadata: dict[str, Any] | None = None,
     ) -> WorkflowState:
         next_state: WorkflowState = dict(state)
         artifacts = dict(state.get("artifacts", {}))
+        subsystems = dict(state.get("_subsystems", {}))
         if artifact is not None:
             artifacts[self.config.id] = artifact
+        if subsystem_metadata is not None:
+            subsystems[self.config.id] = subsystem_metadata
         next_state.update(
-            {"logs": logs, "errors": errors, "approvals": approvals, "artifacts": artifacts}
+            {
+                "logs": logs,
+                "errors": errors,
+                "approvals": approvals,
+                "artifacts": artifacts,
+                "_subsystems": subsystems,
+            }
         )
         return next_state

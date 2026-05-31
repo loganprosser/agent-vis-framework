@@ -10,6 +10,53 @@ class RetryPolicy(BaseModel):
     backoff_seconds: float = Field(default=0.0, ge=0.0)
 
 
+class BurrActionConfig(BaseModel):
+    id: str = Field(min_length=1)
+    label: str = ""
+    kind: Literal["agent", "action", "router", "tool", "human"] = "action"
+    description: str = ""
+    reads: list[str] = Field(default_factory=list)
+    writes: list[str] = Field(default_factory=list)
+    model: str | None = None
+    prompt: str = ""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class BurrTransitionConfig(BaseModel):
+    source: str = Field(min_length=1)
+    target: str = Field(min_length=1)
+    condition: str = "default"
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class BurrTopologyConfig(BaseModel):
+    entrypoint: str = Field(min_length=1)
+    actions: list[BurrActionConfig] = Field(default_factory=list)
+    transitions: list[BurrTransitionConfig] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def validate_graph_references(self) -> "BurrTopologyConfig":
+        action_ids = {action.id for action in self.actions}
+        if len(action_ids) != len(self.actions):
+            raise ValueError("Burr topology action ids must be unique.")
+        if self.entrypoint not in action_ids:
+            raise ValueError(f"Burr topology entrypoint '{self.entrypoint}' is not a defined action.")
+        for transition in self.transitions:
+            if transition.source not in action_ids:
+                raise ValueError(
+                    f"Burr topology transition source '{transition.source}' is not a defined action."
+                )
+            if transition.target not in action_ids:
+                raise ValueError(
+                    f"Burr topology transition target '{transition.target}' is not a defined action."
+                )
+        return self
+
+
 class BurrSubsystemConfig(BaseModel):
     app_module: str = Field(min_length=1)
     app_factory: str = Field(min_length=1)
@@ -20,6 +67,7 @@ class BurrSubsystemConfig(BaseModel):
     artifact_name: str = Field(default="burr_final_state", min_length=1)
     timeout_seconds: float | None = Field(default=None, gt=0)
     fail_on_error: bool = True
+    topology: BurrTopologyConfig | None = None
     ui: dict[str, Any] | None = None
 
     model_config = ConfigDict(extra="forbid")

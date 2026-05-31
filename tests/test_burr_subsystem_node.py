@@ -53,6 +53,34 @@ def test_burr_subsystem_config_defaults_are_applied_when_workflow_loads() -> Non
     assert config["fail_on_error"] is True
 
 
+def test_burr_subsystem_topology_is_validated_when_workflow_loads(tmp_path) -> None:
+    workflow_dir = tmp_path / "workflows"
+    workflow_dir.mkdir()
+    (workflow_dir / "invalid_burr_topology.yaml").write_text(
+        """
+name: invalid_burr_topology
+entrypoint: burr
+nodes:
+  - id: burr
+    type: burr_subsystem
+    config:
+      app_module: app.subsystems.example_burr_app
+      app_factory: build_example_app
+      halt_after: [greet]
+      topology:
+        entrypoint: missing_action
+        actions:
+          - id: greet
+        transitions: []
+edges: []
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError, match="entrypoint 'missing_action' is not a defined action"):
+        ConfigLoader(tmp_path).load_workflow("invalid_burr_topology")
+
+
 @pytest.mark.asyncio
 async def test_burr_subsystem_runs_from_workflow_yaml() -> None:
     loader = ConfigLoader()

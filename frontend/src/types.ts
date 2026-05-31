@@ -1,3 +1,40 @@
+export type BurrAction = {
+  id: string;
+  label?: string;
+  kind?: "agent" | "action" | "router" | "tool" | "human";
+  description?: string;
+  reads?: string[];
+  writes?: string[];
+  model?: string | null;
+  prompt?: string;
+};
+
+export type BurrTransition = {
+  source: string;
+  target: string;
+  condition?: string;
+};
+
+export type BurrTopology = {
+  entrypoint: string;
+  actions: BurrAction[];
+  transitions: BurrTransition[];
+};
+
+export type BurrSubsystemConfig = {
+  app_module: string;
+  app_factory: string;
+  input_map: Record<string, string>;
+  output_map: Record<string, string>;
+  halt_after?: string[];
+  terminal_states?: string[];
+  artifact_name?: string;
+  timeout_seconds?: number;
+  fail_on_error?: boolean;
+  topology?: BurrTopology;
+  ui?: { x?: number; y?: number };
+};
+
 export type WorkflowNode = {
   id: string;
   type: string;
@@ -11,6 +48,15 @@ export type WorkflowNode = {
   retry_policy: { max_attempts: number; backoff_seconds: number };
   human_approval: boolean;
   config: Record<string, unknown> & { ui?: { x?: number; y?: number } };
+  subsystem?: boolean;
+  subsystem_metadata?: {
+    runtime: string;
+    app_module: string;
+    app_factory: string;
+    has_internal_trace: boolean;
+    artifact_names: string[];
+    topology?: BurrTopology;
+  };
 };
 
 export type WorkflowEdge = {
@@ -26,4 +72,35 @@ export type Workflow = {
   entrypoint: string;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
+};
+
+export type SubsystemRunMetadata = {
+  node_id: string;
+  runtime: string;
+  app_module: string;
+  app_factory: string;
+  status: string;
+  terminal_state?: string | null;
+  halt_reason?: string | null;
+  duration_ms?: number | null;
+  input_map?: Record<string, string>;
+  output_map?: Record<string, string>;
+  has_internal_trace?: boolean;
+  artifact_names?: string[];
+};
+
+export type WorkflowState = {
+  artifacts: Record<string, Record<string, unknown>>;
+  _subsystems?: Record<string, SubsystemRunMetadata>;
+  logs: string[];
+  node_outputs: Record<string, unknown>;
+  final_report?: string | null;
+};
+
+export type RunRecord = {
+  run_id: string;
+  workflow_name: string;
+  status: string;
+  state?: WorkflowState | null;
+  error?: string | null;
 };
