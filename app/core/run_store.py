@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -24,11 +25,23 @@ class RunRecord(BaseModel):
     error: str | None = None
 
 
+class RunEvent(BaseModel):
+    id: int
+    run_id: str
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    event_type: str
+    node_id: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
 class RunStore:
     """In-memory run store with a small API that can later wrap SQL storage."""
 
     def __init__(self) -> None:
         self._runs: dict[str, RunRecord] = {}
+        self._events: dict[str, list[RunEvent]] = {}
+        self._next_event_id = 1
+        self._event_lock = threading.Lock()
 
     def create(self, workflow_name: str, inputs: dict[str, Any]) -> RunRecord:
         run = RunRecord(
@@ -51,6 +64,28 @@ class RunStore:
 
     def get(self, run_id: str) -> RunRecord | None:
         return self._runs.get(run_id)
+
+    def append_event(
+        self,
+        run_id: str,
+        event_type: str,
+        node_id: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> RunEvent:
+        with self._event_lock:
+            event = RunEvent(
+                id=self._next_event_id,
+                run_id=run_id,
+                event_type=event_type,
+                node_id=node_id,
+                payload=payload or {},
+            )
+            self._next_event_id += 1
+            self._events.setdefault(run_id, []).append(event)
+        return event
+
+    def list_events(self, run_id: str) -> list[RunEvent]:
+        return sorted(self._events.get(run_id, []), key=lambda event: (event.timestamp, event.id))
 
     def _update(self, run_id: str, **changes: Any) -> RunRecord:
         run = self._runs[run_id]
@@ -84,6 +119,57 @@ class SQLiteRunStore(RunStore):
             row = connection.execute("SELECT * FROM runs WHERE run_id = ?", (run_id,)).fetchone()
         return self._from_row(row) if row else None
 
+    def append_event(
+        self,
+        run_id: str,
+        event_type: str,
+        node_id: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> RunEvent:
+        timestamp = datetime.now(UTC)
+        event_payload = payload or {}
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO run_events (run_id, timestamp, event_type, node_id, payload_json)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (run_id, timestamp.isoformat(), event_type, node_id, json.dumps(event_payload, default=str)),
+            )
+        return RunEvent(
+            id=cursor.lastrowid,
+            run_id=run_id,
+            timestamp=timestamp,
+            event_type=event_type,
+            node_id=node_id,
+            payload=event_payload,
+        )
+
+    def list_events(self, run_id: str) -> list[RunEvent]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, run_id, timestamp, event_type, node_id, payload_json
+                FROM run_events
+                WHERE run_id = ?
+                ORDER BY timestamp, id
+                """,
+                (run_id,),
+            ).fetchall()
+        return [
+            RunEvent.model_validate(
+                {
+                    "id": row["id"],
+                    "run_id": row["run_id"],
+                    "timestamp": row["timestamp"],
+                    "event_type": row["event_type"],
+                    "node_id": row["node_id"],
+                    "payload": json.loads(row["payload_json"]),
+                }
+            )
+            for row in rows
+        ]
+
     def _update(self, run_id: str, **changes: Any) -> RunRecord:
         run = self.get(run_id)
         if run is None:
@@ -114,6 +200,24 @@ class SQLiteRunStore(RunStore):
                     state_json TEXT,
                     error TEXT
                 )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS run_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    node_id TEXT,
+                    payload_json TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_run_events_run_id_timestamp
+                ON run_events (run_id, timestamp, id)
                 """
             )
 

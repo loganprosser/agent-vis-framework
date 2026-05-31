@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from importlib import import_module
 from typing import Any, Mapping
 
+from app.core.runtime_events import safe_append_event
 from app.nodes.base import NodeExecutionError
 from app.nodes.subsystem import BaseSubsystemNode
 from app.schemas.node_io import NodeContext, NodeResult
@@ -26,6 +27,8 @@ class _ExecutionTracker:
     finished_at: datetime | None = None
     latest_state: dict[str, Any] | None = None
     trace: list[dict[str, Any]] | None = None
+    action_started_at: dict[int, datetime] = field(default_factory=dict)
+    has_internal_trace: bool = False
 
 
 class BurrSubsystemNode(BaseSubsystemNode):
@@ -35,25 +38,41 @@ class BurrSubsystemNode(BaseSubsystemNode):
 
     async def execute(self, context: NodeContext) -> NodeResult:
         tracker = _ExecutionTracker()
+        self._append_burr_event(context.state, "burr_subsystem_started", status="running")
         operation = asyncio.to_thread(self._execute_sync, context, tracker)
         timeout_seconds = self.burr_config.timeout_seconds
         if timeout_seconds is None:
             try:
-                return await operation
+                result = await operation
             except Exception as exc:  # noqa: BLE001 - normalize subsystem failures.
-                return self._handle_failure(exc, tracker)
+                return self._handle_failure(exc, tracker, context.state)
+            self._append_burr_event(
+                context.state,
+                "burr_subsystem_completed",
+                status="completed",
+                tracker=tracker,
+            )
+            return result
         try:
-            return await asyncio.wait_for(operation, timeout=timeout_seconds)
+            result = await asyncio.wait_for(operation, timeout=timeout_seconds)
         except TimeoutError as exc:
             return self._handle_failure(
                 NodeExecutionError(
                     f"burr_subsystem node '{self.config.id}' timed out after {timeout_seconds}s.",
                 ),
                 tracker,
+                context.state,
                 status="timed_out",
             )
         except Exception as exc:  # noqa: BLE001 - normalize subsystem failures.
-            return self._handle_failure(exc, tracker)
+            return self._handle_failure(exc, tracker, context.state)
+        self._append_burr_event(
+            context.state,
+            "burr_subsystem_completed",
+            status="completed",
+            tracker=tracker,
+        )
+        return result
 
     @property
     def burr_config(self) -> BurrSubsystemConfig:
@@ -65,6 +84,11 @@ class BurrSubsystemNode(BaseSubsystemNode):
 
         try:
             candidate = factory(**factory_inputs)
+            if callable(getattr(candidate, "with_hooks", None)):
+                # Burr lifecycle hooks must be attached to the builder before build().
+                # Factories returning an already-built app retain the minimal trace fallback.
+                candidate = candidate.with_hooks(self._create_trace_hook(tracker, context.state))
+                tracker.has_internal_trace = True
             application = candidate.build() if hasattr(candidate, "build") else candidate
         except Exception as exc:  # noqa: BLE001 - include configured factory details.
             raise RuntimeError(
@@ -159,6 +183,91 @@ class BurrSubsystemNode(BaseSubsystemNode):
     def _factory_label(self) -> str:
         return f"{self.burr_config.app_module}.{self.burr_config.app_factory}"
 
+    def _create_trace_hook(self, tracker: _ExecutionTracker, parent_state: Mapping[str, Any]) -> Any:
+        lifecycle = import_module("burr.lifecycle")
+        serialize_state = self._serialize_state
+        serialize_value = self._serialize_value
+        append_event = self._append_burr_event
+
+        class BurrTraceHook(lifecycle.PreRunStepHook, lifecycle.PostRunStepHook):
+            def pre_run_step(
+                self,
+                *,
+                state: Any,
+                action: Any,
+                inputs: dict[str, Any],
+                sequence_id: int,
+                **future_kwargs: Any,
+            ) -> None:
+                started_at = datetime.now(UTC)
+                tracker.action_started_at[sequence_id] = started_at
+                tracker.trace = list(tracker.trace or [])
+                tracker.trace.append(
+                    {
+                        "event": "action_start",
+                        "timestamp": started_at.isoformat(),
+                        "sequence_id": sequence_id,
+                        "action": action.name,
+                        "inputs": serialize_value(
+                            {key: value for key, value in inputs.items() if not key.startswith("__")}
+                        ),
+                        "state": serialize_state(state),
+                    }
+                )
+                append_event(
+                    parent_state,
+                    "burr_action_started",
+                    status="running",
+                    action=action.name,
+                    sequence_id=sequence_id,
+                )
+
+            def post_run_step(
+                self,
+                *,
+                state: Any,
+                action: Any,
+                result: dict[str, Any] | None,
+                sequence_id: int,
+                exception: Exception | None,
+                **future_kwargs: Any,
+            ) -> None:
+                finished_at = datetime.now(UTC)
+                started_at = tracker.action_started_at.pop(sequence_id, None)
+                tracker.trace = list(tracker.trace or [])
+                tracker.trace.append(
+                    {
+                        "event": "action_end",
+                        "timestamp": finished_at.isoformat(),
+                        "sequence_id": sequence_id,
+                        "action": action.name,
+                        "status": "failed" if exception else "completed",
+                        "duration_ms": (
+                            round((finished_at - started_at).total_seconds() * 1000, 3)
+                            if started_at
+                            else None
+                        ),
+                        "result": serialize_value(result),
+                        "exception": str(exception) if exception else None,
+                        "state": serialize_state(state),
+                    }
+                )
+                append_event(
+                    parent_state,
+                    "burr_action_failed" if exception else "burr_action_completed",
+                    status="failed" if exception else "completed",
+                    action=action.name,
+                    sequence_id=sequence_id,
+                    duration_ms=(
+                        round((finished_at - started_at).total_seconds() * 1000, 3)
+                        if started_at
+                        else None
+                    ),
+                    error=str(exception) if exception else None,
+                )
+
+        return BurrTraceHook()
+
     def _start_tracking(self, tracker: _ExecutionTracker, state: Any) -> None:
         tracker.started_at = datetime.now(UTC)
         tracker.latest_state = self._serialize_state(state)
@@ -204,7 +313,7 @@ class BurrSubsystemNode(BaseSubsystemNode):
             "output_keys": list(self.burr_config.output_map),
             "input_map": self.burr_config.input_map,
             "output_map": self.burr_config.output_map,
-            "has_internal_trace": False,
+            "has_internal_trace": tracker.has_internal_trace,
             "artifact_names": self._json_artifact_names(),
         }
         return {
@@ -212,7 +321,7 @@ class BurrSubsystemNode(BaseSubsystemNode):
             "burr_final_state.json": final_state,
             "burr_node_metadata.json": metadata,
             "burr_trace.json": {
-                "source": "minimal",
+                "source": "burr_lifecycle_hooks" if tracker.has_internal_trace else "minimal",
                 "events": list(tracker.trace or []),
                 "final_state": final_state,
             },
@@ -244,6 +353,7 @@ class BurrSubsystemNode(BaseSubsystemNode):
         self,
         exc: Exception,
         tracker: _ExecutionTracker,
+        parent_state: Mapping[str, Any],
         *,
         status: str = "failed",
     ) -> NodeResult:
@@ -256,6 +366,13 @@ class BurrSubsystemNode(BaseSubsystemNode):
         )
         error.artifact = tracker.artifact
         error.subsystem_metadata = self._subsystem_metadata(tracker)
+        self._append_burr_event(
+            parent_state,
+            "burr_subsystem_failed",
+            status=status,
+            tracker=tracker,
+            error=str(error),
+        )
         if self.burr_config.fail_on_error:
             raise error
         return NodeResult(
@@ -271,4 +388,48 @@ class BurrSubsystemNode(BaseSubsystemNode):
         if not isinstance(state, Mapping):
             raise RuntimeError("Burr application final state must be mapping-like.")
         snapshot = {key: value for key, value in state.items() if not key.startswith("__")}
-        return json.loads(json.dumps(snapshot, default=str))
+        return BurrSubsystemNode._serialize_value(snapshot)
+
+    @staticmethod
+    def _serialize_value(value: Any) -> Any:
+        return json.loads(json.dumps(value, default=str))
+
+    def _append_burr_event(
+        self,
+        parent_state: Mapping[str, Any],
+        event_type: str,
+        *,
+        status: str,
+        tracker: _ExecutionTracker | None = None,
+        action: str | None = None,
+        sequence_id: int | None = None,
+        duration_ms: float | None = None,
+        error: str | None = None,
+    ) -> None:
+        payload: dict[str, Any] = {
+            "node_id": self.config.id,
+            "node_type": self.config.type,
+            "runtime": "burr",
+            "status": status,
+            "app_module": self.config.config.get("app_module"),
+            "app_factory": self.config.config.get("app_factory"),
+        }
+        if tracker is not None:
+            payload["artifact_names"] = self._artifact_names(tracker.artifact)
+            payload["duration_ms"] = self._duration_ms(tracker)
+            payload["terminal_state"] = (tracker.latest_state or {}).get("status")
+        if action is not None:
+            payload["action"] = action
+        if sequence_id is not None:
+            payload["sequence_id"] = sequence_id
+        if duration_ms is not None:
+            payload["duration_ms"] = duration_ms
+        if error:
+            payload["error"] = error
+        safe_append_event(
+            self.event_store,
+            parent_state.get("run_id"),
+            event_type,
+            node_id=self.config.id,
+            payload=payload,
+        )

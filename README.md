@@ -230,6 +230,14 @@ The API stores runs in SQLite by default at `.runs/workflows.sqlite3`. Use the r
 curl http://127.0.0.1:8000/runs/<run_id>
 ```
 
+Runtime visualizers can poll the ordered event stream for the same run:
+
+```bash
+curl http://127.0.0.1:8000/runs/<run_id>/events
+```
+
+Events cover parent node lifecycle, tool and MCP activity, Burr subsystem lifecycle, and internal Burr actions. Burr builder factories are instrumented through Burr's public `ApplicationBuilder.with_hooks(...)` API.
+
 The `/catalog` endpoint returns available providers, tools, and MCPs (used by the visual editor to populate dropdowns):
 
 ```bash
@@ -305,7 +313,7 @@ Use `burr_subsystem` when one workflow node should run an internal Burr applicat
       transitions: []
 ```
 
-The configured factory may return a Burr `ApplicationBuilder` or a built application. Set exactly one of `halt_after` or `terminal_states`; use `terminal_states` when the child application should stop after its state `status` reaches one of the configured values. The selected outputs become the node output. Each run stores `burr_final_state.json`, `burr_node_metadata.json`, and `burr_trace.json` in the node artifact bundle. The configured `artifact_name`, which defaults to `burr_final_state`, remains as a convenient state alias. `timeout_seconds` is optional and `fail_on_error` defaults to `true`. Burr config is validated when the workflow loads.
+The configured factory may return a Burr `ApplicationBuilder` or a built application. Set exactly one of `halt_after` or `terminal_states`; use `terminal_states` when the child application should stop after its state `status` reaches one of the configured values. The selected outputs become the node output. Each run stores `burr_final_state.json`, `burr_node_metadata.json`, and `burr_trace.json` in the node artifact bundle. For factories that return an `ApplicationBuilder`, the adapter attaches a Burr lifecycle hook and records action-level start/end events, results, errors, timings, and state snapshots in `burr_trace.json`. Built applications still run, but expose the minimal subsystem start/end trace because Burr hooks must be attached before build time. The configured `artifact_name`, which defaults to `burr_final_state`, remains as a convenient state alias. `timeout_seconds` is optional and `fail_on_error` defaults to `true`. Burr config is validated when the workflow loads.
 
 `topology` is optional declarative editor metadata inspired by Burr's telemetry application model: an entrypoint, internal actions, and conditional transitions. It is validated and saved with workflow YAML, but the Python factory remains the runtime source of truth. This gives the editor a stable authoring model now and a natural place to attach richer Burr runtime telemetry later.
 

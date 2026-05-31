@@ -229,6 +229,40 @@ h3 {
   text-transform: uppercase;
 }
 
+.flow-node .runtime-chip {
+  justify-self: start;
+  border-radius: 99px;
+  padding: 2px 6px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.runtime-chip-pending {
+  background: rgba(100, 116, 139, .2);
+}
+
+.runtime-chip-running {
+  background: rgba(59, 130, 246, .22);
+  color: #bfdbfe !important;
+}
+
+.runtime-chip-completed {
+  background: rgba(34, 197, 94, .18);
+  color: #bbf7d0 !important;
+}
+
+.runtime-chip-failed {
+  background: rgba(248, 113, 113, .18);
+  color: #fecaca !important;
+}
+
+.flow-node .current-action {
+  color: #ddd6fe;
+  font-weight: 700;
+}
+
 .react-flow__node {
   border-radius: 8px;
   border: 1px solid #485366;
@@ -241,6 +275,25 @@ h3 {
   border-color: #a78bfa;
   background: linear-gradient(145deg, #171e2a, rgba(109, 91, 208, .28));
   box-shadow: 0 0 0 2px rgba(167, 139, 250, .14), 0 18px 38px rgba(0, 0, 0, .22);
+}
+
+.react-flow__node.runtime-pending {
+  opacity: .78;
+}
+
+.react-flow__node.runtime-running {
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, .2), 0 18px 38px rgba(0, 0, 0, .22);
+}
+
+.react-flow__node.runtime-completed {
+  border-color: #4ade80;
+  box-shadow: 0 0 0 2px rgba(74, 222, 128, .16), 0 18px 38px rgba(0, 0, 0, .22);
+}
+
+.react-flow__node.runtime-failed {
+  border-color: #f87171;
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, .18), 0 18px 38px rgba(0, 0, 0, .22);
 }
 
 .react-flow__edge-textbg {
@@ -406,6 +459,101 @@ h3 {
 .artifact-list {
   display: grid;
   gap: 6px;
+}
+
+.timeline-panel {
+  display: grid;
+  gap: 7px;
+  border-top: 1px solid #30394a;
+  padding-top: 12px;
+}
+
+.timeline-panel .section-heading span,
+.timeline-panel p,
+.action-event-list > span,
+.subtle {
+  color: #91a0b6;
+  font-size: 11px;
+}
+
+.timeline-list {
+  display: grid;
+  gap: 5px;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.timeline-list button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 7px;
+  padding: 7px;
+  text-align: left;
+}
+
+.timeline-list button.selected {
+  border-color: #60a5fa;
+}
+
+.timeline-list button.failed {
+  border-color: rgba(248, 113, 113, .7);
+}
+
+.timeline-list time,
+.timeline-list span {
+  color: #91a0b6;
+  font-size: 10px;
+}
+
+.timeline-list span {
+  grid-column: 2;
+}
+
+.timeline-payload {
+  max-height: 180px;
+  overflow: auto;
+  margin: 0;
+  border-radius: 5px;
+  background: #0c1119;
+  padding: 8px;
+  color: #cbd5e1;
+  font-size: 10px;
+  white-space: pre-wrap;
+}
+
+.action-event-list {
+  display: grid;
+  gap: 5px;
+}
+
+.action-sequence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.action-sequence code {
+  border-radius: 99px;
+  background: rgba(167, 139, 250, .14);
+  padding: 3px 6px;
+  color: #ddd6fe;
+  font-size: 10px;
+}
+
+.action-sequence span {
+  color: #91a0b6;
+  font-size: 11px;
+}
+
+.action-event-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.action-event-list span {
+  color: #91a0b6;
 }
 
 .transition-list p,

@@ -58,3 +58,14 @@ async def test_invalid_requirements_enter_repair(requirements_text: str) -> None
     assert final_state["repair_happened"] is True
     assert final_state["validation_status"] == "repaired"
     assert len(final_state["raw_requirements"]) >= 12
+    trace = result["artifacts"]["validate_and_structure_requirements"]["burr_trace.json"]
+    assert trace["source"] == "burr_lifecycle_hooks"
+    assert [
+        event["action"]
+        for event in trace["events"]
+        if event["event"] == "action_end"
+    ] == [
+        "validate_requirements",
+        "repair_requirements",
+        "structure_requirements",
+    ]

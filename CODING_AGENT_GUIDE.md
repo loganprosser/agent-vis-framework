@@ -45,6 +45,7 @@ app/api/routes.py
     POST /workflows/validate
     POST /workflows/{workflow_name}/run
     GET  /runs/{run_id}
+    GET  /runs/{run_id}/events
 
 app/core/config_loader.py
   Loads YAML configs from WORKFLOW_CONFIG_DIR or ./configs.
@@ -560,4 +561,3 @@ WORKFLOW_RUN_STORE=memory ./start.sh
 - Prefer Pydantic validation for new config shapes.
 - Keep the embedded editor dependency-free unless intentionally moving to `frontend/`.
 - Use React Flow in `frontend/` for richer graph editing when Node/npm are available.
-

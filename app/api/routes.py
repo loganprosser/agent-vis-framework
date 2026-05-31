@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from app.core.config_loader import ConfigLoader
 from app.core.graph_builder import GraphBuilder
 from app.core.registry import ModelRegistry, ToolRegistry
-from app.core.run_store import RunRecord, create_run_store
+from app.core.run_store import RunEvent, RunRecord, create_run_store
 from app.core.state import initial_state
 from app.nodes.burr_subsystem import BURR_JSON_ARTIFACT_NAMES
 from app.schemas.workflow import WorkflowConfig
@@ -38,7 +38,7 @@ def export_workflow(
                 "runtime": "burr",
                 "app_module": node_config.config["app_module"],
                 "app_factory": node_config.config["app_factory"],
-                "has_internal_trace": False,
+                "has_internal_trace": True,
                 "artifact_names": list(BURR_JSON_ARTIFACT_NAMES),
                 **({"topology": node_config.config["topology"]} if node_config.config.get("topology") else {}),
             }
@@ -128,7 +128,12 @@ def create_router(
         try:
             workflow = config_loader.load_workflow(workflow_name)
             model_registry, tool_registry = build_registries(config_loader)
-            graph = GraphBuilder(model_registry, tool_registry, config_loader=config_loader).compile(workflow)
+            graph = GraphBuilder(
+                model_registry,
+                tool_registry,
+                config_loader=config_loader,
+                event_store=run_store,
+            ).compile(workflow)
             final_state = await graph.ainvoke(state)
         except Exception as exc:  # noqa: BLE001 - convert framework errors into run records.
             return run_store.mark_failed(run.run_id, str(exc), state)
@@ -141,6 +146,12 @@ def create_router(
         if run is None:
             raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
         return run
+
+    @router.get("/runs/{run_id}/events", response_model=list[RunEvent])
+    async def get_run_events(run_id: str) -> list[RunEvent]:
+        if run_store.get(run_id) is None:
+            raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
+        return run_store.list_events(run_id)
 
     @router.get("/runs/{run_id}/artifacts/{node_id}/{artifact_name}")
     async def get_run_artifact(run_id: str, node_id: str, artifact_name: str) -> Any:

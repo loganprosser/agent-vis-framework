@@ -104,3 +104,12 @@ export type RunRecord = {
   state?: WorkflowState | null;
   error?: string | null;
 };
+
+export type RunEvent = {
+  id: number;
+  run_id: string;
+  timestamp: string;
+  event_type: string;
+  node_id?: string | null;
+  payload: Record<string, unknown>;
+};

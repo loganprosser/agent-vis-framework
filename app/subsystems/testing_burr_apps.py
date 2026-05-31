@@ -4,9 +4,15 @@ from time import sleep
 
 from burr.core import ApplicationBuilder, State, action
 
+from app.subsystems.example_burr_app import build_example_app
+
 
 def build_not_runnable():
     return object()
+
+
+def build_built_example_app(message: str):
+    return build_example_app(message).build()
 
 
 @action(reads=["message"], writes=["status"])

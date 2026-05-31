@@ -6,16 +6,18 @@ from pydantic import ValidationError
 from app.core.config_loader import ConfigLoader
 from app.core.graph_builder import GraphBuilder
 from app.core.registry import ModelRegistry, ToolRegistry
+from app.core.run_store import RunStore
 from app.core.state import initial_state
 from app.models.mock_provider import MockModelProvider
 from app.nodes.burr_subsystem import BurrSubsystemNode
 from app.schemas.workflow import NodeConfig
 
 
-def build_node(**config) -> BurrSubsystemNode:
+def build_node(*, event_store=None, **config) -> BurrSubsystemNode:
     return BurrSubsystemNode(
         config=NodeConfig(id="burr_test", type="burr_subsystem", config=config),
         model_provider=MockModelProvider("mock", "mock-deterministic"),
+        event_store=event_store,
     )
 
 
@@ -146,27 +148,40 @@ async def test_burr_subsystem_node_result_references_json_artifacts() -> None:
     assert datetime.fromisoformat(metadata["started_at"]) <= datetime.fromisoformat(
         metadata["finished_at"]
     )
-    assert result.artifact["burr_trace.json"] == {
-        "source": "minimal",
-        "events": [
-            {
-                "event": "start",
-                "timestamp": metadata["started_at"],
-                "state": {"message": "artifacts", "status": "initialized"},
-            },
-            {
-                "event": "end",
-                "timestamp": metadata["finished_at"],
-                "status": "completed",
-                "state": {
-                    "message": "artifacts",
-                    "status": "complete",
-                    "greeting": "Hello, artifacts!",
-                },
-            },
-        ],
-        "final_state": result.artifact["burr_final_state.json"],
+    assert metadata["has_internal_trace"] is True
+    trace = result.artifact["burr_trace.json"]
+    assert trace["source"] == "burr_lifecycle_hooks"
+    assert trace["final_state"] == result.artifact["burr_final_state.json"]
+    assert [event["event"] for event in trace["events"]] == [
+        "start",
+        "action_start",
+        "action_end",
+        "end",
+    ]
+    assert trace["events"][1] == {
+        "event": "action_start",
+        "timestamp": trace["events"][1]["timestamp"],
+        "sequence_id": 0,
+        "action": "greet",
+        "inputs": {},
+        "state": {"message": "artifacts", "status": "initialized"},
     }
+    assert trace["events"][2] == {
+        "event": "action_end",
+        "timestamp": trace["events"][2]["timestamp"],
+        "sequence_id": 0,
+        "action": "greet",
+        "status": "completed",
+        "duration_ms": trace["events"][2]["duration_ms"],
+        "result": {"greeting": "Hello, artifacts!"},
+        "exception": None,
+        "state": {
+            "message": "artifacts",
+            "status": "complete",
+            "greeting": "Hello, artifacts!",
+        },
+    }
+    assert trace["events"][2]["duration_ms"] >= 0
 
 
 @pytest.mark.asyncio
@@ -184,6 +199,26 @@ async def test_burr_subsystem_supports_terminal_states() -> None:
 
     assert result["errors"] == []
     assert result["node_outputs"]["burr_test"] == {"greeting": "Hello, terminal!"}
+
+
+@pytest.mark.asyncio
+async def test_burr_subsystem_keeps_minimal_trace_for_already_built_app() -> None:
+    node = build_node(
+        app_module="app.subsystems.testing_burr_apps",
+        app_factory="build_built_example_app",
+        input_map={"message": "inputs.message"},
+        output_map={"greeting": "greeting"},
+        halt_after=["greet"],
+    )
+    state = initial_state(run_id="test-run", workflow_name="test", inputs={"message": "built"})
+
+    result = await node(state)
+
+    metadata = result["artifacts"]["burr_test"]["burr_node_metadata.json"]
+    trace = result["artifacts"]["burr_test"]["burr_trace.json"]
+    assert metadata["has_internal_trace"] is False
+    assert trace["source"] == "minimal"
+    assert [event["event"] for event in trace["events"]] == ["start", "end"]
 
 
 @pytest.mark.asyncio
@@ -330,6 +365,41 @@ async def test_burr_subsystem_saves_latest_state_when_started_app_fails() -> Non
         "message": "run",
         "status": "initialized",
     }
+    trace = result["artifacts"]["burr_test"]["burr_trace.json"]
+    assert trace["source"] == "burr_lifecycle_hooks"
+    assert [event["event"] for event in trace["events"]] == [
+        "start",
+        "action_start",
+        "action_end",
+        "end",
+    ]
+    assert trace["events"][2]["action"] == "fail_after_start"
+    assert trace["events"][2]["status"] == "failed"
+    assert trace["events"][2]["exception"] == "intentional failure for run"
+
+
+@pytest.mark.asyncio
+async def test_burr_subsystem_emits_failed_runtime_events() -> None:
+    store = RunStore()
+    node = build_node(
+        event_store=store,
+        app_module="app.subsystems.testing_burr_apps",
+        app_factory="build_failing_app",
+        input_map={"message": "inputs.message"},
+        halt_after=["fail_after_start"],
+    )
+    state = initial_state(run_id="failed-burr-run", workflow_name="test", inputs={"message": "run"})
+
+    await node(state)
+
+    assert [event.event_type for event in store.list_events("failed-burr-run")] == [
+        "node_started",
+        "burr_subsystem_started",
+        "burr_action_started",
+        "burr_action_failed",
+        "burr_subsystem_failed",
+        "node_failed",
+    ]
 
 
 @pytest.mark.asyncio

@@ -24,7 +24,7 @@ def test_workflow_export_marks_burr_nodes_as_subsystems() -> None:
         "runtime": "burr",
         "app_module": "app.subsystems.requirements_burr_app",
         "app_factory": "build_requirements_app",
-        "has_internal_trace": False,
+        "has_internal_trace": True,
         "artifact_names": [
             "burr_final_state.json",
             "burr_node_metadata.json",
@@ -51,6 +51,7 @@ def test_run_details_expose_burr_subsystem_metadata_and_artifact_links() -> None
     assert metadata["halt_reason"] == "halt_after: structure_requirements"
     assert metadata["app_module"] == "app.subsystems.branching_requirements_burr_app"
     assert metadata["app_factory"] == "build_branching_requirements_app"
+    assert metadata["has_internal_trace"] is True
     assert metadata["artifact_names"] == [
         "burr_final_state.json",
         "burr_node_metadata.json",
@@ -86,3 +87,79 @@ def test_workflow_export_exposes_editable_burr_topology() -> None:
         "target": "repair_requirements",
         "condition": "validation_status == repair_required",
     }
+
+
+def test_run_events_endpoint_exposes_parent_node_lifecycle() -> None:
+    client = build_client()
+
+    run = client.post(
+        "/workflows/starter_three_node/run",
+        json={"inputs": {"requirements_doc": "requirements.md"}},
+    ).json()
+    response = client.get(f"/runs/{run['run_id']}/events")
+
+    assert response.status_code == 200
+    events = response.json()
+    assert [event["event_type"] for event in events] == [
+        "node_started",
+        "node_completed",
+        "node_started",
+        "node_completed",
+        "node_started",
+        "node_completed",
+    ]
+    assert [event["node_id"] for event in events] == [
+        "doc_reader",
+        "doc_reader",
+        "variable_extractor",
+        "variable_extractor",
+        "report_generator",
+        "report_generator",
+    ]
+    assert events[1]["payload"]["artifact_names"] == ["documents"]
+    assert [event["timestamp"] for event in events] == sorted(
+        event["timestamp"] for event in events
+    )
+
+
+def test_run_events_endpoint_exposes_burr_subsystem_and_internal_action_path() -> None:
+    client = build_client()
+
+    run = client.post(
+        "/workflows/branching_burr_requirements/run",
+        json={"inputs": {"requirements_text": "short"}},
+    ).json()
+    events = client.get(f"/runs/{run['run_id']}/events").json()
+
+    subsystem_events = [
+        event["event_type"]
+        for event in events
+        if event["node_id"] == "validate_and_structure_requirements"
+    ]
+    assert "burr_subsystem_started" in subsystem_events
+    assert "burr_subsystem_completed" in subsystem_events
+    assert [
+        event["payload"]["action"]
+        for event in events
+        if event["event_type"] == "burr_action_completed"
+    ] == [
+        "validate_requirements",
+        "repair_requirements",
+        "structure_requirements",
+    ]
+
+
+def test_run_events_endpoint_exposes_mcp_tool_calls() -> None:
+    client = build_client()
+
+    run = client.post("/workflows/mcp_discovery_demo/run", json={"inputs": {}}).json()
+    events = client.get(f"/runs/{run['run_id']}/events").json()
+
+    assert [
+        (event["event_type"], event["payload"].get("operation"))
+        for event in events
+        if event["event_type"].startswith("tool_")
+    ] == [
+        ("tool_started", "list_tools"),
+        ("tool_completed", "list_tools"),
+    ]

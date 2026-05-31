@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from langgraph.graph import END, StateGraph
 
-from app.core.registry import ModelRegistry, NodeRegistry, ToolRegistry
-from app.core.state import WorkflowState
 from app.core.config_loader import ConfigLoader
-from app.nodes.constraint_builder import ConstraintBuilderNode
+from app.core.registry import ModelRegistry, NodeRegistry, ToolRegistry
+from app.core.runtime_events import RuntimeEventStore
+from app.core.state import WorkflowState
 from app.nodes.burr_subsystem import BurrSubsystemNode
+from app.nodes.constraint_builder import ConstraintBuilderNode
 from app.nodes.doc_reader import DocReaderNode
 from app.nodes.domain_generator import DomainGeneratorNode
 from app.nodes.mcp_call import McpCallNode
@@ -22,6 +23,7 @@ from app.nodes.tnt_cli_reducer import TntCliReducerNode
 from app.nodes.variable_classifier import VariableClassifierNode
 from app.nodes.variable_extractor import VariableExtractorNode
 from app.schemas.workflow import WorkflowConfig
+from app.tools.base import ObservableTool
 
 
 def default_node_registry() -> NodeRegistry:
@@ -52,11 +54,13 @@ class GraphBuilder:
         tool_registry: ToolRegistry,
         node_registry: NodeRegistry | None = None,
         config_loader: ConfigLoader | None = None,
+        event_store: RuntimeEventStore | None = None,
     ) -> None:
         self.model_registry = model_registry
         self.tool_registry = tool_registry
         self.node_registry = node_registry or default_node_registry()
         self.config_loader = config_loader
+        self.event_store = event_store
 
     def compile(self, workflow: WorkflowConfig):
         graph = StateGraph(WorkflowState)
@@ -70,11 +74,23 @@ class GraphBuilder:
                     "system_prompt_file": None,
                 })
 
+            tools = self.tool_registry.many(effective_config.tools)
+            if self.event_store is not None:
+                tools = {
+                    tool_id: ObservableTool(
+                        tool,
+                        node_id=effective_config.id,
+                        event_store=self.event_store,
+                    )
+                    for tool_id, tool in tools.items()
+                }
+
             node = self.node_registry.create(
                 effective_config.type,
                 config=effective_config,
                 model_provider=self.model_registry.get(effective_config.provider),
-                tools=self.tool_registry.many(effective_config.tools),
+                tools=tools,
+                event_store=self.event_store,
             )
             graph.add_node(effective_config.id, node)
 

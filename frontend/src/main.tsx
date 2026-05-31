@@ -19,6 +19,7 @@ import type {
   BurrAction,
   BurrSubsystemConfig,
   BurrTopology,
+  RunEvent,
   RunRecord,
   SubsystemRunMetadata,
   Workflow,
@@ -31,6 +32,9 @@ const api = async <T,>(path: string, options?: RequestInit): Promise<T> => {
   return response.json();
 };
 
+const getRun = (runId: string) => api<RunRecord>(`/runs/${encodeURIComponent(runId)}`);
+const getRunEvents = (runId: string) => api<RunEvent[]>(`/runs/${encodeURIComponent(runId)}/events`);
+const terminalRunStatuses = new Set(["completed", "failed"]);
 const csv = (value: string) => value.split(",").map((item) => item.trim()).filter(Boolean);
 const csvValue = (value?: string[]) => (value ?? []).join(", ");
 const uniqueId = (prefix: string, ids: string[]) => {
@@ -89,27 +93,104 @@ function defaultBurrNode(id: string): WorkflowNode {
   };
 }
 
-function nodeLabel(node: WorkflowNode) {
+type RuntimeStatus = "pending" | "running" | "completed" | "failed";
+
+type NodeRuntimeState = {
+  status: RuntimeStatus;
+  subsystemStatus?: RuntimeStatus;
+  currentBurrAction?: string;
+  burrActionEvents: RunEvent[];
+};
+
+const emptyRuntimeState = (): NodeRuntimeState => ({ status: "pending", burrActionEvents: [] });
+
+const sortedEvents = (events: RunEvent[]) => [...events].sort(
+  (left, right) => left.timestamp.localeCompare(right.timestamp) || left.id - right.id,
+);
+
+const eventAction = (event: RunEvent) => {
+  const action = event.payload.action;
+  return typeof action === "string" ? action : undefined;
+};
+
+function deriveRuntimeByNode(workflow: Workflow | null, events: RunEvent[]) {
+  const runtimeByNode: Record<string, NodeRuntimeState> = {};
+  for (const node of workflow?.nodes ?? []) runtimeByNode[node.id] = emptyRuntimeState();
+
+  for (const event of sortedEvents(events)) {
+    if (!event.node_id || !runtimeByNode[event.node_id]) continue;
+    const runtime = runtimeByNode[event.node_id];
+    switch (event.event_type) {
+      case "node_started":
+        runtime.status = "running";
+        break;
+      case "node_completed":
+        runtime.status = "completed";
+        break;
+      case "node_failed":
+        runtime.status = "failed";
+        break;
+      case "burr_subsystem_started":
+        runtime.subsystemStatus = "running";
+        break;
+      case "burr_subsystem_completed":
+        runtime.subsystemStatus = "completed";
+        runtime.currentBurrAction = undefined;
+        break;
+      case "burr_subsystem_failed":
+        runtime.subsystemStatus = "failed";
+        runtime.currentBurrAction = undefined;
+        break;
+      case "burr_action_started":
+        runtime.burrActionEvents.push(event);
+        runtime.currentBurrAction = eventAction(event);
+        break;
+      case "burr_action_completed":
+        runtime.burrActionEvents.push(event);
+        if (runtime.currentBurrAction === eventAction(event)) runtime.currentBurrAction = undefined;
+        break;
+      case "burr_action_failed":
+        runtime.burrActionEvents.push(event);
+        runtime.subsystemStatus = "failed";
+        if (runtime.currentBurrAction === eventAction(event)) runtime.currentBurrAction = undefined;
+        break;
+    }
+  }
+  return runtimeByNode;
+}
+
+const visibleNodeStatus = (node: WorkflowNode, runtime?: NodeRuntimeState): RuntimeStatus => {
+  if (!runtime) return "pending";
+  return node.type === "burr_subsystem" ? runtime.subsystemStatus ?? runtime.status : runtime.status;
+};
+
+function nodeLabel(node: WorkflowNode, runtime?: NodeRuntimeState) {
   const topology = node.type === "burr_subsystem" ? subsystemConfig(node).topology : undefined;
+  const runtimeStatus = visibleNodeStatus(node, runtime);
   return (
     <div className={`flow-node ${node.type === "burr_subsystem" ? "flow-subsystem" : ""}`}>
       {node.type === "burr_subsystem" && <span className="subsystem-label">SUB Burr subsystem</span>}
       <strong>{node.id}</strong>
       <span>{node.type} · {node.provider ?? "default"}</span>
+      <span className={`runtime-chip runtime-chip-${runtimeStatus}`}>{runtimeStatus}</span>
+      {runtime?.currentBurrAction && <span className="current-action">Burr action: {runtime.currentBurrAction}</span>}
       {topology && <span>{topology.actions.length} internal action{topology.actions.length === 1 ? "" : "s"}</span>}
     </div>
   );
 }
 
-function toFlowNodes(workflow: Workflow): Node[] {
+function toFlowNodes(workflow: Workflow, runtimeByNode: Record<string, NodeRuntimeState> = {}): Node[] {
   return workflow.nodes.map((node, index) => ({
     id: node.id,
     position: {
       x: Number(node.config?.ui?.x ?? 120 + index * 320),
       y: Number(node.config?.ui?.y ?? 240),
     },
-    data: { label: nodeLabel(node) },
-    className: node.type === "burr_subsystem" ? "subsystem-node" : "",
+    data: { label: nodeLabel(node, runtimeByNode[node.id]) },
+    className: [
+      node.type === "burr_subsystem" ? "subsystem-node" : "",
+      `runtime-${visibleNodeStatus(node, runtimeByNode[node.id])}`,
+    ].filter(Boolean).join(" "),
     type: "default",
   }));
 }
@@ -190,6 +271,41 @@ function TagList(props: { label: string; values?: string[] }) {
   );
 }
 
+function RuntimeTimeline(props: { events: RunEvent[]; runId?: string }) {
+  const events = useMemo(() => sortedEvents(props.events), [props.events]);
+  const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
+  const selectedEvent = events.find((event) => event.id === selectedEventId);
+
+  useEffect(() => setSelectedEventId(null), [props.runId]);
+
+  return (
+    <div className="timeline-panel">
+      <div className="section-heading">
+        <h2>Runtime Timeline</h2>
+        <span>{events.length} event{events.length === 1 ? "" : "s"}</span>
+      </div>
+      {!props.runId && <p>Run a workflow to inspect runtime events.</p>}
+      {props.runId && events.length === 0 && <p>Waiting for runtime events...</p>}
+      <div className="timeline-list">
+        {events.map((event) => (
+          <button
+            className={`${selectedEventId === event.id ? "selected" : ""} ${event.event_type.endsWith("_failed") ? "failed" : ""}`}
+            key={event.id}
+            onClick={() => setSelectedEventId(event.id)}
+          >
+            <time>{new Date(event.timestamp).toLocaleTimeString()}</time>
+            <strong>{event.event_type}</strong>
+            <span>{event.node_id ?? "run"}</span>
+          </button>
+        ))}
+      </div>
+      {selectedEvent && (
+        <pre className="timeline-payload">{JSON.stringify(selectedEvent.payload, null, 2)}</pre>
+      )}
+    </div>
+  );
+}
+
 function TopologyEditor(props: {
   topology?: BurrTopology;
   onChange: (topology: BurrTopology) => void;
@@ -208,8 +324,8 @@ function TopologyEditor(props: {
   if (!topology) {
     return (
       <div className="empty-topology">
-        <p>No editable topology has been declared for this Python factory yet.</p>
-        <button onClick={() => props.onChange(defaultTopology())}>Create Internal Topology</button>
+        <p>No visualization topology metadata has been declared for this Python factory yet. Creating it does not change runtime behavior.</p>
+        <button onClick={() => props.onChange(defaultTopology())}>Create Visualization Topology</button>
       </div>
     );
   }
@@ -279,7 +395,7 @@ function TopologyEditor(props: {
       <div className="section-heading">
         <div>
           <h3>Internal Burr Topology</h3>
-          <p>Editable workflow metadata for the Python Burr factory.</p>
+          <p>Visualization metadata only. Editing this does not change the Python Burr factory.</p>
         </div>
         <button onClick={addAction}>Add Action</button>
       </div>
@@ -417,13 +533,30 @@ function SubsystemInspector(props: {
   metadata?: SubsystemRunMetadata;
   artifacts: Record<string, unknown>;
   runId?: string;
+  runtime?: NodeRuntimeState;
   updateConfig: (patch: Partial<BurrSubsystemConfig>) => void;
   setStatus: (value: string) => void;
 }) {
   const config = subsystemConfig(props.node);
-  const artifactNames = Object.keys(props.artifacts).filter((name) => name.endsWith(".json"));
+  const artifactNames = Object.keys(props.artifacts)
+    .filter((name) => name.endsWith(".json"))
+    .sort((left, right) => {
+      const preferred = ["burr_final_state.json", "burr_trace.json"];
+      const leftIndex = preferred.indexOf(left);
+      const rightIndex = preferred.indexOf(right);
+      if (leftIndex === -1 && rightIndex === -1) return left.localeCompare(right);
+      if (leftIndex === -1) return 1;
+      if (rightIndex === -1) return -1;
+      return leftIndex - rightIndex;
+    });
+  const recentActionEvents = (props.runtime?.burrActionEvents ?? []).slice(-10).reverse();
+  const recentActionSequence = (props.runtime?.burrActionEvents ?? [])
+    .filter((event) => event.event_type !== "burr_action_started")
+    .slice(-10)
+    .map((event) => eventAction(event) ?? "unknown action");
   const haltMode = config.terminal_states ? "terminal_states" : "halt_after";
   const haltValues = config.terminal_states ?? config.halt_after ?? [];
+  const runtimeStatus = visibleNodeStatus(props.node, props.runtime);
 
   return (
     <div className="inspector-content">
@@ -434,12 +567,13 @@ function SubsystemInspector(props: {
       <dl className="summary-grid">
         <dt>Node ID</dt><dd>{props.node.id}</dd>
         <dt>Node type</dt><dd>{props.node.type}</dd>
-        <dt>Status</dt><dd>{props.metadata?.status ?? "Not run"}</dd>
+        <dt>Status</dt><dd>{runtimeStatus}</dd>
+        <dt>Current action</dt><dd>{props.runtime?.currentBurrAction ?? "Not running"}</dd>
         <dt>Terminal state</dt><dd>{props.metadata?.terminal_state ?? "Not available"}</dd>
         <dt>Halt reason</dt><dd>{props.metadata?.halt_reason ?? "Not available"}</dd>
       </dl>
       <div className="notice">
-        Internal topology is editable metadata today. Runtime execution still comes from the Python factory.
+        Internal topology is visualization metadata only. Runtime execution still comes from the Python factory.
       </div>
       <div className="two-column">
         <label className="field">
@@ -513,7 +647,26 @@ function SubsystemInspector(props: {
               ))
             : <span>Run this workflow to inspect Burr state and trace artifacts.</span>}
         </div>
+        <h3>Recent Burr Action Sequence</h3>
+        <div className="action-sequence">
+          {recentActionSequence.length
+            ? recentActionSequence.map((action, index) => <code key={`${action}-${index}`}>{action}</code>)
+            : <span>No completed internal Burr actions recorded yet.</span>}
+        </div>
+        <h3>Recent Burr Action Events</h3>
+        <div className="action-event-list">
+          {recentActionEvents.length
+            ? recentActionEvents.map((event) => (
+                <div key={event.id}>
+                  <code>{eventAction(event) ?? "unknown action"}</code>
+                  <span>{event.event_type.replace("burr_action_", "")}</span>
+                </div>
+              ))
+            : <span>No internal Burr actions recorded yet.</span>}
+        </div>
+        <h3>_subsystems.{props.node.id} Metadata</h3>
         {props.metadata && <pre>{JSON.stringify(props.metadata, null, 2)}</pre>}
+        {!props.metadata && <span className="subtle">Run this workflow to inspect subsystem metadata.</span>}
       </div>
     </div>
   );
@@ -527,7 +680,9 @@ function App() {
   const [status, setStatus] = useState("Loading...");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [runRecord, setRunRecord] = useState<RunRecord | null>(null);
+  const [runEvents, setRunEvents] = useState<RunEvent[]>([]);
   const [runInput, setRunInput] = useState('{\n  "inputs": {}\n}');
+  const runtimeByNode = useMemo(() => deriveRuntimeByNode(workflow, runEvents), [workflow, runEvents]);
 
   const loadWorkflow = useCallback(async (name: string) => {
     try {
@@ -537,6 +692,7 @@ function App() {
       setEdges(toFlowEdges(loaded));
       setSelectedNodeId(loaded.nodes[0]?.id ?? null);
       setRunRecord(null);
+      setRunEvents([]);
       setStatus(`Loaded ${name}`);
     } catch (error) {
       setStatus((error as Error).message);
@@ -554,6 +710,35 @@ function App() {
   }, [loadWorkflow]);
 
   useEffect(() => {
+    const runId = runRecord?.run_id;
+    if (!runId) return;
+    let cancelled = false;
+
+    const refresh = async () => {
+      try {
+        const active = !terminalRunStatuses.has(runRecord.status);
+        const [events, latestRun] = await Promise.all([
+          getRunEvents(runId),
+          active ? getRun(runId) : Promise.resolve(null),
+        ]);
+        if (cancelled) return;
+        setRunEvents(sortedEvents(events));
+        if (latestRun) setRunRecord(latestRun);
+      } catch (error) {
+        if (!cancelled) setStatus(`Runtime refresh failed: ${(error as Error).message}`);
+      }
+    };
+
+    void refresh();
+    if (terminalRunStatuses.has(runRecord.status)) return () => { cancelled = true; };
+    const timer = window.setInterval(() => void refresh(), 1500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [runRecord?.run_id, runRecord?.status]);
+
+  useEffect(() => {
     if (!workflow) return;
     const workflowNodes = new Map(workflow.nodes.map((node) => [node.id, node]));
     setNodes((current) => current.map((flowNode) => {
@@ -561,17 +746,21 @@ function App() {
       return workflowNode
         ? {
             ...flowNode,
-            className: workflowNode.type === "burr_subsystem" ? "subsystem-node" : "",
-            data: { label: nodeLabel(workflowNode) },
+            className: [
+              workflowNode.type === "burr_subsystem" ? "subsystem-node" : "",
+              `runtime-${visibleNodeStatus(workflowNode, runtimeByNode[workflowNode.id])}`,
+            ].filter(Boolean).join(" "),
+            data: { label: nodeLabel(workflowNode, runtimeByNode[workflowNode.id]) },
           }
         : flowNode;
     }));
-  }, [workflow]);
+  }, [runtimeByNode, workflow]);
 
   const currentWorkflow = useMemo(() => workflow ? fromFlow(workflow, nodes, edges) : null, [workflow, nodes, edges]);
   const selectedNode = workflow?.nodes.find((node) => node.id === selectedNodeId);
   const subsystemMetadata = selectedNode ? runRecord?.state?._subsystems?.[selectedNode.id] : undefined;
   const subsystemArtifacts = selectedNode ? runRecord?.state?.artifacts?.[selectedNode.id] ?? {} : {};
+  const selectedNodeRuntime = selectedNode ? runtimeByNode[selectedNode.id] : undefined;
 
   const replaceWorkflow = (nextWorkflow: Workflow, selectId?: string | null) => {
     setWorkflow(nextWorkflow);
@@ -609,6 +798,9 @@ function App() {
     if (!currentWorkflow) return;
     try {
       const body = JSON.parse(runInput) as { inputs?: Record<string, unknown> };
+      setRunRecord(null);
+      setRunEvents([]);
+      setStatus(`Running ${currentWorkflow.name}...`);
       const result = await api<RunRecord>(`/workflows/${currentWorkflow.name}/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -703,6 +895,7 @@ function App() {
             {runRecord.error && <pre>{runRecord.error}</pre>}
           </div>
         )}
+        <RuntimeTimeline events={runEvents} runId={runRecord?.run_id} />
       </aside>
       <section className="canvas-panel">
         <div className="canvas-heading">
@@ -738,6 +931,7 @@ function App() {
             metadata={subsystemMetadata}
             artifacts={subsystemArtifacts}
             runId={runRecord?.run_id}
+            runtime={selectedNodeRuntime}
             updateConfig={updateSubsystemConfig}
             setStatus={setStatus}
           />
@@ -747,6 +941,7 @@ function App() {
             <dl className="summary-grid">
               <dt>Node ID</dt><dd>{selectedNode.id}</dd>
               <dt>Node type</dt><dd>{selectedNode.type}</dd>
+              <dt>Status</dt><dd>{visibleNodeStatus(selectedNode, selectedNodeRuntime)}</dd>
               <dt>Provider</dt><dd>{selectedNode.provider ?? "default"}</dd>
               <dt>Model</dt><dd>{selectedNode.model ?? "default"}</dd>
             </dl>
