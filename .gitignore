@@ -41,6 +41,8 @@ frontend/.vite/
 .server.pid
 .frontend.log
 .frontend.pid
+.frontend.port
+.runtime.env
 
 # App-generated run/db state
 .runs/

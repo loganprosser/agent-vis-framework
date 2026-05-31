@@ -15,10 +15,19 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 import "./styles.css";
+import {
+  CommonNodeInspector,
+  EdgeEditor,
+  MarkdownEditor,
+  WorkflowJsonEditor,
+  WorkflowSettings,
+} from "./editor-panels";
+import type { PromptTarget } from "./editor-panels";
 import type {
   BurrAction,
   BurrSubsystemConfig,
   BurrTopology,
+  Catalog,
   RunEvent,
   RunRecord,
   SubsystemRunMetadata,
@@ -34,28 +43,70 @@ const api = async <T,>(path: string, options?: RequestInit): Promise<T> => {
 
 const getRun = (runId: string) => api<RunRecord>(`/runs/${encodeURIComponent(runId)}`);
 const getRunEvents = (runId: string) => api<RunEvent[]>(`/runs/${encodeURIComponent(runId)}/events`);
+const promptPath = (file: string) => file.split("/").map(encodeURIComponent).join("/");
+const savePrompt = async (file: string, content: string): Promise<void> => {
+  await api(`/prompts/${promptPath(file)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  });
+};
+const emptyCatalog: Catalog = { providers: [], tools: [], mcps: [], node_types: [] };
 const terminalRunStatuses = new Set(["completed", "failed"]);
 const csv = (value: string) => value.split(",").map((item) => item.trim()).filter(Boolean);
 const csvValue = (value?: string[]) => (value ?? []).join(", ");
+const slugify = (value: string) => value.trim().replace(/[^a-zA-Z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "node";
 const uniqueId = (prefix: string, ids: string[]) => {
   let index = 1;
   while (ids.includes(`${prefix}_${index}`)) index += 1;
   return `${prefix}_${index}`;
 };
 
+function draftWorkflow(): Workflow {
+  const name = "draft_workflow";
+  return {
+    name,
+    version: "0.1.0",
+    description: "A new config-driven workflow.",
+    entrypoint: "start",
+    nodes: [{
+      id: "start",
+      type: "doc_reader",
+      provider: "mock",
+      model: "mock-deterministic",
+      system_prompt: "",
+      system_prompt_file: `workflows/${name}/nodes/start.md`,
+      input_keys: [],
+      output_keys: [],
+      tools: [],
+      retry_policy: { max_attempts: 1, backoff_seconds: 0 },
+      human_approval: false,
+      config: { ui: { x: 160, y: 160 } },
+    }],
+    edges: [],
+  };
+}
+
 function subsystemConfig(node: WorkflowNode): BurrSubsystemConfig {
   return node.config as unknown as BurrSubsystemConfig;
 }
 
-function defaultTopology(): BurrTopology {
+function defaultTopology(workflowName = "workflow", nodeId = "burr_subsystem"): BurrTopology {
   return {
     entrypoint: "action_1",
-    actions: [{ id: "action_1", label: "First action", kind: "agent", reads: [], writes: [] }],
+    actions: [{
+      id: "action_1",
+      label: "First action",
+      kind: "agent",
+      reads: [],
+      writes: [],
+      prompt_file: `workflows/${workflowName}/subsystems/${nodeId}/actions/action_1.md`,
+    }],
     transitions: [],
   };
 }
 
-function defaultBurrNode(id: string): WorkflowNode {
+function defaultBurrNode(id: string, workflowName: string): WorkflowNode {
   return {
     id,
     type: "burr_subsystem",
@@ -84,6 +135,7 @@ function defaultBurrNode(id: string): WorkflowNode {
             description: "Build a greeting from the parent workflow input.",
             reads: ["message"],
             writes: ["greeting", "status"],
+            prompt_file: `workflows/${workflowName}/subsystems/${id}/actions/greet.md`,
           },
         ],
         transitions: [],
@@ -210,7 +262,12 @@ function fromFlow(workflow: Workflow, nodes: Node[], edges: Edge[]): Workflow {
   return {
     ...workflow,
     nodes: workflow.nodes.map((node) => {
-      const { subsystem: _subsystem, subsystem_metadata: _subsystemMetadata, ...editableNode } = node;
+      const {
+        resolved_system_prompt: _resolvedSystemPrompt,
+        subsystem: _subsystem,
+        subsystem_metadata: _subsystemMetadata,
+        ...editableNode
+      } = node;
       return {
         ...editableNode,
         config: {
@@ -307,8 +364,11 @@ function RuntimeTimeline(props: { events: RunEvent[]; runId?: string }) {
 }
 
 function TopologyEditor(props: {
+  workflowName: string;
+  nodeId: string;
   topology?: BurrTopology;
   onChange: (topology: BurrTopology) => void;
+  openPrompt: (target: PromptTarget) => void;
   setStatus: (value: string) => void;
 }) {
   const [selectedActionId, setSelectedActionId] = useState<string | null>(props.topology?.entrypoint ?? null);
@@ -325,7 +385,7 @@ function TopologyEditor(props: {
     return (
       <div className="empty-topology">
         <p>No visualization topology metadata has been declared for this Python factory yet. Creating it does not change runtime behavior.</p>
-        <button onClick={() => props.onChange(defaultTopology())}>Create Visualization Topology</button>
+        <button onClick={() => props.onChange(defaultTopology(props.workflowName, props.nodeId))}>Create Visualization Topology</button>
       </div>
     );
   }
@@ -359,7 +419,14 @@ function TopologyEditor(props: {
     const id = uniqueId("action", topology.actions.map((action) => action.id));
     props.onChange({
       ...topology,
-      actions: [...topology.actions, { id, label: "New action", kind: "agent", reads: [], writes: [] }],
+      actions: [...topology.actions, {
+        id,
+        label: "New action",
+        kind: "agent",
+        reads: [],
+        writes: [],
+        prompt_file: `workflows/${props.workflowName}/subsystems/${props.nodeId}/actions/${id}.md`,
+      }],
     });
     setSelectedActionId(id);
   };
@@ -472,6 +539,23 @@ function TopologyEditor(props: {
             <span>Prompt / instruction</span>
             <textarea value={selectedAction.prompt ?? ""} onChange={(event) => updateAction(selectedAction.id, { prompt: event.target.value })} rows={3} />
           </label>
+          <div className="field">
+            <span>Markdown prompt file</span>
+            <div className="input-button-row">
+              <input
+                value={selectedAction.prompt_file ?? ""}
+                onChange={(event) => updateAction(selectedAction.id, { prompt_file: event.target.value || null })}
+                placeholder={`workflows/${props.workflowName}/subsystems/${props.nodeId}/actions/${selectedAction.id}.md`}
+              />
+              <button onClick={() => props.openPrompt({
+                title: `Burr action metadata: ${props.nodeId}.${selectedAction.id}`,
+                file: selectedAction.prompt_file ?? `workflows/${props.workflowName}/subsystems/${props.nodeId}/actions/${selectedAction.id}.md`,
+                content: selectedAction.prompt ?? "",
+                note: "Visualization metadata only. The Python Burr factory must load this file explicitly before it affects runtime behavior.",
+                onSaved: (file, content) => updateAction(selectedAction.id, { prompt_file: file, prompt: content }),
+              })}>Edit MD</button>
+            </div>
+          </div>
           <TagList label="Reads" values={selectedAction.reads} />
           <TagList label="Writes" values={selectedAction.writes} />
         </div>
@@ -530,10 +614,12 @@ function TopologyEditor(props: {
 
 function SubsystemInspector(props: {
   node: WorkflowNode;
+  workflowName: string;
   metadata?: SubsystemRunMetadata;
   artifacts: Record<string, unknown>;
   runId?: string;
   runtime?: NodeRuntimeState;
+  openPrompt: (target: PromptTarget) => void;
   updateConfig: (patch: Partial<BurrSubsystemConfig>) => void;
   setStatus: (value: string) => void;
 }) {
@@ -630,7 +716,14 @@ function SubsystemInspector(props: {
         <input type="checkbox" checked={config.fail_on_error ?? true} onChange={(event) => props.updateConfig({ fail_on_error: event.target.checked })} />
         <span>Fail parent workflow when the Burr subsystem errors</span>
       </label>
-      <TopologyEditor topology={config.topology} onChange={(topology) => props.updateConfig({ topology })} setStatus={props.setStatus} />
+      <TopologyEditor
+        workflowName={props.workflowName}
+        nodeId={props.node.id}
+        topology={config.topology}
+        onChange={(topology) => props.updateConfig({ topology })}
+        openPrompt={props.openPrompt}
+        setStatus={props.setStatus}
+      />
       <div className="runtime-panel">
         <h3>Runtime Artifacts</h3>
         <div className="artifact-list">
@@ -674,6 +767,7 @@ function SubsystemInspector(props: {
 
 function App() {
   const [workflowNames, setWorkflowNames] = useState<string[]>([]);
+  const [catalog, setCatalog] = useState<Catalog>(emptyCatalog);
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
@@ -681,6 +775,7 @@ function App() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [runRecord, setRunRecord] = useState<RunRecord | null>(null);
   const [runEvents, setRunEvents] = useState<RunEvent[]>([]);
+  const [promptTarget, setPromptTarget] = useState<PromptTarget | null>(null);
   const [runInput, setRunInput] = useState('{\n  "inputs": {}\n}');
   const runtimeByNode = useMemo(() => deriveRuntimeByNode(workflow, runEvents), [workflow, runEvents]);
 
@@ -699,15 +794,21 @@ function App() {
     }
   }, []);
 
+  const refreshWorkflowNames = useCallback(async () => {
+    const data = await api<{ workflows: string[] }>("/workflows");
+    setWorkflowNames(data.workflows);
+    return data.workflows;
+  }, []);
+
   useEffect(() => {
-    api<{ workflows: string[] }>("/workflows")
-      .then(async (data) => {
-        setWorkflowNames(data.workflows);
-        const initial = data.workflows.includes("starter_three_node") ? "starter_three_node" : data.workflows[0];
+    Promise.all([refreshWorkflowNames(), api<Catalog>("/catalog")])
+      .then(async ([names, loadedCatalog]) => {
+        setCatalog(loadedCatalog);
+        const initial = names.includes("starter_three_node") ? "starter_three_node" : names[0];
         if (initial) await loadWorkflow(initial);
       })
       .catch((error) => setStatus(error.message));
-  }, [loadWorkflow]);
+  }, [loadWorkflow, refreshWorkflowNames]);
 
   useEffect(() => {
     const runId = runRecord?.run_id;
@@ -776,18 +877,72 @@ function App() {
       : current);
   };
 
+  const patchSelectedNode = (patch: Partial<WorkflowNode>) => {
+    updateSelectedNode((node) => ({ ...node, ...patch }));
+  };
+
+  const renameSelectedNode = (requestedId: string) => {
+    if (!currentWorkflow || !selectedNodeId) return;
+    const nextId = slugify(requestedId);
+    if (nextId !== selectedNodeId && currentWorkflow.nodes.some((node) => node.id === nextId)) {
+      setStatus(`Node id already exists: ${nextId}`);
+      return;
+    }
+    if (nextId === selectedNodeId) return;
+    replaceWorkflow({
+      ...currentWorkflow,
+      entrypoint: currentWorkflow.entrypoint === selectedNodeId ? nextId : currentWorkflow.entrypoint,
+      nodes: currentWorkflow.nodes.map((node) => node.id === selectedNodeId ? { ...node, id: nextId } : node),
+      edges: currentWorkflow.edges.map((edge) => ({
+        ...edge,
+        source: edge.source === selectedNodeId ? nextId : edge.source,
+        target: edge.target === selectedNodeId ? nextId : edge.target,
+      })),
+    }, nextId);
+  };
+
+  const changeSelectedNodeType = (nodeType: string) => {
+    if (!selectedNode || !workflow || nodeType === selectedNode.type) return;
+    if (nodeType === "burr_subsystem") {
+      const burrNode = defaultBurrNode(selectedNode.id, workflow.name);
+      patchSelectedNode({ type: nodeType, config: { ...burrNode.config, ui: selectedNode.config.ui } });
+      return;
+    }
+    patchSelectedNode({ type: nodeType, config: { ui: selectedNode.config.ui } });
+  };
+
   const updateSubsystemConfig = (patch: Partial<BurrSubsystemConfig>) => {
     updateSelectedNode((node) => ({ ...node, config: { ...node.config, ...patch } }));
+  };
+
+  const validate = async () => {
+    if (!currentWorkflow) return;
+    await api("/workflows/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(currentWorkflow),
+    });
+  };
+
+  const openPrompt = async (target: PromptTarget) => {
+    try {
+      const prompt = await api<{ content: string }>(`/prompts/${promptPath(target.file)}`);
+      setPromptTarget({ ...target, content: prompt.content });
+    } catch {
+      setPromptTarget(target);
+    }
   };
 
   const save = async () => {
     if (!currentWorkflow) return;
     try {
+      await validate();
       await api(`/workflows/${currentWorkflow.name}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(currentWorkflow),
       });
+      await refreshWorkflowNames();
       setStatus(`Saved ${currentWorkflow.name}`);
     } catch (error) {
       setStatus(`Save failed: ${(error as Error).message}`);
@@ -797,6 +952,7 @@ function App() {
   const run = async () => {
     if (!currentWorkflow) return;
     try {
+      await validate();
       const body = JSON.parse(runInput) as { inputs?: Record<string, unknown> };
       setRunRecord(null);
       setRunEvents([]);
@@ -818,17 +974,18 @@ function App() {
     [],
   );
 
-  const addNode = (type: "normal" | "burr") => {
+  const addNode = (type: string) => {
     if (!currentWorkflow) return;
-    const id = uniqueId(type === "burr" ? "burr_subsystem" : "node", currentWorkflow.nodes.map((node) => node.id));
-    const newNode: WorkflowNode = type === "burr"
-      ? defaultBurrNode(id)
+    const id = uniqueId(type, currentWorkflow.nodes.map((node) => node.id));
+    const newNode: WorkflowNode = type === "burr_subsystem"
+      ? defaultBurrNode(id, currentWorkflow.name)
       : {
           id,
-          type: "doc_reader",
+          type,
           provider: "mock",
           model: "mock-deterministic",
           system_prompt: "",
+          system_prompt_file: `workflows/${currentWorkflow.name}/nodes/${id}.md`,
           input_keys: [],
           output_keys: [],
           tools: [],
@@ -837,6 +994,13 @@ function App() {
           config: { ui: { x: 160, y: 160 } },
         };
     replaceWorkflow({ ...currentWorkflow, nodes: [...currentWorkflow.nodes, newNode] }, id);
+  };
+
+  const newDraft = () => {
+    replaceWorkflow(draftWorkflow(), "start");
+    setRunRecord(null);
+    setRunEvents([]);
+    setStatus("Created draft workflow. Save to persist YAML.");
   };
 
   const deleteSelectedNode = () => {
@@ -851,6 +1015,7 @@ function App() {
   };
 
   return (
+    <>
     <main className="app-shell">
       <aside className="left-panel">
         <div>
@@ -867,11 +1032,17 @@ function App() {
         <div className="button-row">
           <button className="primary" onClick={save}>Save</button>
           <button onClick={run}>Run</button>
+          <button onClick={() => validate().then(() => setStatus("Workflow is valid")).catch((error) => setStatus(`Validation failed: ${error.message}`))}>Validate</button>
+          <button onClick={newDraft}>New Draft</button>
         </div>
+        {workflow && <WorkflowSettings workflow={workflow} update={(patch) => setWorkflow((current) => current ? { ...current, ...patch } : current)} />}
         <div className="palette">
           <h2>Add Nodes</h2>
-          <button onClick={() => addNode("normal")}><strong>+</strong><span>Standard node</span></button>
-          <button className="subsystem-add" onClick={() => addNode("burr")}><strong>SUB</strong><span>Burr subsystem</span></button>
+          {catalog.node_types.map((nodeType) => (
+            <button className={nodeType === "burr_subsystem" ? "subsystem-add" : ""} key={nodeType} onClick={() => addNode(nodeType)}>
+              <strong>{nodeType === "burr_subsystem" ? "SUB" : "+"}</strong><span>{nodeType}</span>
+            </button>
+          ))}
         </div>
         <div className="node-list">
           <h2>Workflow Nodes</h2>
@@ -896,6 +1067,8 @@ function App() {
           </div>
         )}
         <RuntimeTimeline events={runEvents} runId={runRecord?.run_id} />
+        {currentWorkflow && <EdgeEditor workflow={currentWorkflow} update={(nextWorkflow) => replaceWorkflow(nextWorkflow, selectedNodeId)} />}
+        {currentWorkflow && <WorkflowJsonEditor workflow={currentWorkflow} load={(nextWorkflow) => replaceWorkflow(nextWorkflow, nextWorkflow.nodes[0]?.id ?? null)} setStatus={setStatus} />}
       </aside>
       <section className="canvas-panel">
         <div className="canvas-heading">
@@ -925,34 +1098,46 @@ function App() {
           <h2>{selectedNode?.id ?? "Select a node"}</h2>
         </div>
         {!selectedNode && <p>Select a node to edit its configuration.</p>}
+        {selectedNode && workflow && (
+          <CommonNodeInspector
+            node={selectedNode}
+            workflowName={workflow.name}
+            catalog={catalog}
+            runtimeStatus={visibleNodeStatus(selectedNode, selectedNodeRuntime)}
+            updateNode={patchSelectedNode}
+            changeNodeType={changeSelectedNodeType}
+            renameNode={renameSelectedNode}
+            openPrompt={(target) => void openPrompt(target)}
+            setStatus={setStatus}
+          />
+        )}
         {selectedNode?.type === "burr_subsystem" && (
           <SubsystemInspector
             node={selectedNode}
+            workflowName={workflow?.name ?? "workflow"}
             metadata={subsystemMetadata}
             artifacts={subsystemArtifacts}
             runId={runRecord?.run_id}
             runtime={selectedNodeRuntime}
+            openPrompt={(target) => void openPrompt(target)}
             updateConfig={updateSubsystemConfig}
             setStatus={setStatus}
           />
-        )}
-        {selectedNode && selectedNode.type !== "burr_subsystem" && (
-          <div className="inspector-content">
-            <dl className="summary-grid">
-              <dt>Node ID</dt><dd>{selectedNode.id}</dd>
-              <dt>Node type</dt><dd>{selectedNode.type}</dd>
-              <dt>Status</dt><dd>{visibleNodeStatus(selectedNode, selectedNodeRuntime)}</dd>
-              <dt>Provider</dt><dd>{selectedNode.provider ?? "default"}</dd>
-              <dt>Model</dt><dd>{selectedNode.model ?? "default"}</dd>
-            </dl>
-            <p className="notice">Standard node editing remains available in the built-in editor while this React studio expands.</p>
-          </div>
         )}
         {selectedNode && workflow && workflow.nodes.length > 1 && (
           <button className="danger delete-node" onClick={deleteSelectedNode}>Delete Selected Node</button>
         )}
       </aside>
     </main>
+    {promptTarget && (
+      <MarkdownEditor
+        target={promptTarget}
+        savePrompt={savePrompt}
+        close={() => setPromptTarget(null)}
+        setStatus={setStatus}
+      />
+    )}
+    </>
   );
 }
 

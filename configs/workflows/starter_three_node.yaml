@@ -1,70 +1,155 @@
 name: starter_three_node
 version: 0.1.0
-description: Tiny three-node workflow for practicing drag, connect, edit, save, and run.
+description: Tiny three-node workflow for practicing drag, connect, edit, save, and
+  run.
 entrypoint: doc_reader
-
 nodes:
-  - id: doc_reader
-    type: doc_reader
-    provider: mock
-    model: mock-deterministic
-    system_prompt: Read a short requirements document and summarize it.
-    input_keys:
-      - requirements_doc
-    output_keys:
-      - documents
-    tools: []
-    retry_policy:
-      max_attempts: 1
-      backoff_seconds: 0
-    human_approval: false
-    config:
-      ui:
-        x: 140
-        y: 260
-
-  - id: variable_extractor
-    type: variable_extractor
-    provider: mock
-    model: mock-deterministic
-    system_prompt: Extract important test variables from the document summary.
-    input_keys:
-      - doc_reader
-    output_keys:
-      - variables
-    tools: []
-    retry_policy:
-      max_attempts: 1
-      backoff_seconds: 0
-    human_approval: false
-    config:
-      ui:
-        x: 500
-        y: 260
-
-  - id: report_generator
-    type: report_generator
-    provider: mock
-    model: mock-deterministic
-    system_prompt: Produce a short markdown report.
-    input_keys:
-      - variables
-    output_keys:
-      - final_report
-    tools: []
-    retry_policy:
-      max_attempts: 1
-      backoff_seconds: 0
-    human_approval: false
-    config:
-      ui:
-        x: 860
-        y: 260
-
+- id: doc_reader
+  type: doc_reader
+  model: mock-deterministic
+  provider: mock
+  system_prompt: Read a short requirements document and summarize it.
+  input_keys:
+  - requirements_doc
+  output_keys:
+  - documents
+  tools: []
+  mcps: []
+  retry_policy:
+    max_attempts: 1
+    backoff_seconds: 0.0
+  human_approval: false
+  config:
+    ui:
+      x: 140
+      y: 260
+- id: variable_extractor
+  type: variable_extractor
+  model: mock-deterministic
+  provider: mock
+  system_prompt: Extract important test variables from the document summary.
+  input_keys:
+  - doc_reader
+  output_keys:
+  - variables
+  tools: []
+  mcps: []
+  retry_policy:
+    max_attempts: 1
+    backoff_seconds: 0.0
+  human_approval: false
+  config:
+    ui:
+      x: 504.1698706366575
+      y: 261.17428043417965
+- id: report_generator
+  type: report_generator
+  model: mock-deterministic
+  provider: mock
+  system_prompt: Produce a short markdown report.
+  input_keys:
+  - variables
+  output_keys:
+  - final_report
+  tools: []
+  mcps: []
+  retry_policy:
+    max_attempts: 1
+    backoff_seconds: 0.0
+  human_approval: false
+  config:
+    ui:
+      x: 854.1621811086795
+      y: 308.2513602241795
+- id: burr_subsystem_1
+  type: burr_subsystem
+  model: mock-deterministic
+  provider: mock
+  system_prompt: ''
+  input_keys:
+  - message
+  output_keys:
+  - greeting
+  - status
+  tools: []
+  mcps: []
+  retry_policy:
+    max_attempts: 1
+    backoff_seconds: 0.0
+  human_approval: false
+  config:
+    app_module: app.subsystems.example_burr_app
+    app_factory: build_example_app
+    input_map:
+      message: inputs.message
+    output_map:
+      greeting: greeting
+      status: status
+    halt_after:
+    - greet
+    artifact_name: burr_final_state
+    fail_on_error: true
+    topology:
+      entrypoint: greet
+      actions:
+      - id: greet
+        label: Create greeting
+        kind: agent
+        description: Build a greeting from the parent workflow input.
+        reads:
+        - message
+        writes:
+        - greeting
+        - status
+        prompt: ''
+      - id: action_1
+        label: New action
+        kind: agent
+        description: ''
+        reads: []
+        writes: []
+        prompt: ''
+      - id: action_2
+        label: New action
+        kind: agent
+        description: ''
+        reads: []
+        writes: []
+        prompt: ''
+      transitions:
+      - source: greet
+        target: action_2
+        condition: default
+    ui:
+      x: 572.3878864839646
+      y: 432.0855594048797
+- id: node_1
+  type: doc_reader
+  model: mock-deterministic
+  provider: mock
+  system_prompt: ''
+  input_keys: []
+  output_keys: []
+  tools: []
+  mcps: []
+  retry_policy:
+    max_attempts: 1
+    backoff_seconds: 0.0
+  human_approval: false
+  config:
+    ui:
+      x: 266.62954913738423
+      y: 470.3575145283644
 edges:
-  - source: doc_reader
-    target: variable_extractor
-    label: documents
-  - source: variable_extractor
-    target: report_generator
-    label: variables
+- source: doc_reader
+  target: variable_extractor
+  label: documents
+- source: variable_extractor
+  target: report_generator
+  label: variables
+- source: burr_subsystem_1
+  target: report_generator
+  label: burr_subsystem_1 -> report_generator
+- source: variable_extractor
+  target: burr_subsystem_1
+  label: variable_extractor -> burr_subsystem_1

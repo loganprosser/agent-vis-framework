@@ -9,6 +9,8 @@ export default defineConfig({
     port: Number(process.env.FRONTEND_PORT ?? "5173"),
     proxy: {
       "/health": backend,
+      "/catalog": backend,
+      "/prompts": backend,
       "/workflows": backend,
       "/runs": backend,
     },

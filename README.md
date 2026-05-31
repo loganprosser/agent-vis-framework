@@ -63,8 +63,11 @@ pip install -e ".[dev]"
 Start the API and visual editor:
 
 ```bash
+./configure
 ./start.sh
 ```
+
+`./configure` prompts for the persisted bind host, FastAPI backend port, and React control-plane port. It writes the ignored local file `.runtime.env`, which is read by `./start.sh` and `./status.sh`.
 
 For development auto-reload:
 
@@ -75,16 +78,16 @@ RELOAD=true ./start.sh
 Then open:
 
 ```text
-http://127.0.0.1:8000/
+http://127.0.0.1:5173/
 ```
 
-If Node/npm are installed, `./start.sh` also starts the optional React Flow editor:
+If Node/npm are installed, `./start.sh` starts the React Flow control plane:
 
 ```text
 http://127.0.0.1:5173/
 ```
 
-The embedded FastAPI editor at port `8000` remains available even without Node.
+The embedded FastAPI editor at `http://127.0.0.1:8000/` remains as a no-build fallback while its useful controls move into the React studio.
 
 The editor loads `starter_three_node` first so you have a simple straight-line workflow to play with:
 
@@ -96,7 +99,16 @@ The editor canvas supports zoom (Ctrl/Cmd + scroll, or the +/−/Fit buttons), p
 
 The right panel shows the selected node's configuration with dropdown selectors for provider and model (populated from `configs/models.yaml`), and separate chip-based selectors for Tools and MCPs (populated from `configs/tools.yaml`). Selected items appear as removable chips — teal for tools, purple for MCPs — with a dropdown to add more. All delete actions require confirmation.
 
-The React Flow editor at port `5173` adds a Burr subsystem studio. It can add a `burr_subsystem` node, edit the Python factory contract, manage an internal action topology, edit reads/writes and conditional transitions, and inspect Burr run artifacts. The embedded editor at port `8000` exposes the same topology as editable JSON.
+The React Flow control plane at port `5173` is the primary editor. It edits workflow metadata, graph edges, common node contracts, providers, models, tools, MCP-backed tools, retry settings, Markdown prompt files, generic node config JSON, Burr subsystem factory contracts, Burr visualization topology, and runtime traces.
+
+Markdown prompt files live beneath `configs/prompts/`. For agent-authored projects, keep them nested by workflow and node:
+
+```text
+configs/prompts/workflows/<workflow>/nodes/<node>.md
+configs/prompts/workflows/<workflow>/subsystems/<subsystem>/actions/<action>.md
+```
+
+Normal node `system_prompt_file` references are loaded by the runtime. Burr action `prompt_file` references are visualization metadata until the Python Burr factory explicitly loads them; the editor labels that boundary clearly.
 
 Stop it:
 
@@ -108,6 +120,46 @@ Check status:
 
 ```bash
 ./status.sh
+```
+
+If another project already uses port `5173`, choose another frontend port:
+
+```bash
+./configure --frontend-port 5174
+./start.sh
+```
+
+`./stop.sh` stops both managed services.
+
+## Configure A Local Ollama Model
+
+The runtime keeps model calls behind the provider-neutral `ModelProvider` interface. Ollama has a native adapter in `app/models/ollama_provider.py`; nodes do not contain Ollama-specific code.
+
+Install and start Ollama, pull at least one model, and install `fzf`:
+
+```bash
+brew install ollama fzf
+ollama serve
+ollama pull qwen2.5-coder:7b
+```
+
+Configure a provider:
+
+```bash
+./configure-model
+```
+
+The script uses `fzf` to select:
+
+1. Provider type. The first supported local provider is `ollama`.
+2. An installed model returned by the local Ollama server.
+3. The model context window.
+
+It adds or updates `ollama_local` in `configs/models.yaml` without removing other providers. Select `ollama_local` on workflow nodes in the React control plane, or set it directly in YAML:
+
+```yaml
+provider: ollama_local
+model: qwen2.5-coder:7b
 ```
 
 Check health:

@@ -7,6 +7,7 @@ export type BurrAction = {
   writes?: string[];
   model?: string | null;
   prompt?: string;
+  prompt_file?: string | null;
 };
 
 export type BurrTransition = {
@@ -41,6 +42,8 @@ export type WorkflowNode = {
   provider?: string | null;
   model?: string | null;
   system_prompt?: string;
+  system_prompt_file?: string | null;
+  resolved_system_prompt?: string;
   input_keys: string[];
   output_keys: string[];
   tools: string[];
@@ -112,4 +115,11 @@ export type RunEvent = {
   event_type: string;
   node_id?: string | null;
   payload: Record<string, unknown>;
+};
+
+export type Catalog = {
+  providers: { id: string; type: string; default_model: string }[];
+  tools: { id: string; type: string; enabled: boolean }[];
+  mcps: { id: string; name: string; transport: string; enabled: boolean }[];
+  node_types: string[];
 };

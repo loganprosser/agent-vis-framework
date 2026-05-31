@@ -5,6 +5,7 @@ from collections.abc import Callable
 from app.models.anthropic_provider import AnthropicModelProvider
 from app.models.base import ModelProvider
 from app.models.mock_provider import MockModelProvider
+from app.models.ollama_provider import OllamaModelProvider
 from app.models.openai_provider import OpenAIModelProvider
 from app.nodes.base import BaseNode
 from app.schemas.workflow import McpServerConfig, ModelProviderConfig, ToolConfig
@@ -28,6 +29,7 @@ class ModelRegistry:
             "ibm": lambda config: OpenAIModelProvider(config.id, config.default_model, config.config),
             "litellm": lambda config: OpenAIModelProvider(config.id, config.default_model, config.config),
             "local": lambda config: MockModelProvider(config.id, config.default_model, config.config),
+            "ollama": lambda config: OllamaModelProvider(config.id, config.default_model, config.config),
         }
         self._providers: dict[str, ModelProvider] = {}
 

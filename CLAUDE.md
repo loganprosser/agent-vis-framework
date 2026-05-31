@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Config-driven FastAPI + LangGraph framework for reusable multi-agent workflows. Workflows are YAML-directed graphs; nodes are typed Python classes; models/tools/MCPs live behind adapters. Includes an embedded visual editor with markdown prompt editing and SQLite run persistence.
+Config-driven FastAPI + LangGraph framework for reusable multi-agent workflows. Workflows are YAML-directed graphs; nodes are typed Python classes; models/tools/MCPs live behind adapters. Includes a React control plane, a no-build fallback editor, Markdown prompt editing, and SQLite run persistence.
 
 ## Commands
 
@@ -15,8 +15,12 @@ python3 -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"
 # With LiteLLM/OpenAI support
 pip install -e ".[dev,litellm]"
 
-# Run server (embedded editor at http://127.0.0.1:8000/)
+# Run backend and React control plane (primary UI at http://127.0.0.1:5173/)
+./configure
 ./start.sh
+
+# Add or update a local Ollama provider with fzf
+./configure-model
 
 # Dev mode with auto-reload
 RELOAD=true ./start.sh
@@ -66,6 +70,8 @@ curl -X POST http://127.0.0.1:8000/workflows/starter_three_node/run \
 - API keys go in env vars, never in YAML
 - Keep provider-specific code inside `app/models/` adapters; tool/MCP code inside `app/tools/` adapters
 
+`./configure` persists local ports in the ignored `.runtime.env` file. `./configure-model` currently supports a native `ollama` provider and uses `fzf` to select an installed local model and context window.
+
 ## Markdown Prompt Files
 
 Nodes can reference prompt content from `.md` files instead of inline `system_prompt` text. Set `system_prompt_file` on a node to a path relative to `configs/prompts/`.
@@ -78,13 +84,22 @@ system_prompt_file: doc_reader.md
 
 The file is resolved as `configs/prompts/<system_prompt_file>`. At graph compilation time, `GraphBuilder` loads the file content and replaces `system_prompt` with the resolved text. If the file is missing, the inline `system_prompt` is used as a fallback.
 
+Prefer nested files:
+
+```text
+configs/prompts/workflows/<workflow>/nodes/<node>.md
+configs/prompts/workflows/<workflow>/subsystems/<subsystem>/actions/<action>.md
+```
+
+Normal node `system_prompt_file` references affect runtime execution. Burr topology action `prompt_file` references are visualization metadata unless the Python Burr factory explicitly loads them.
+
 **API endpoints**:
 - `GET /prompts` — list all `.md` files in `configs/prompts/`
 - `GET /prompts/{path}` — read a prompt file
 - `PUT /prompts/{path}` — create or update a prompt file (body: `{"content": "..."}`)
 - `DELETE /prompts/{path}` — delete a prompt file
 
-**Visual editor**: The "Prompt File" field in the node editor accepts a path like `prompts/my_node.md`. The "Edit in MD Editor" button opens a split-pane markdown editor with live preview (uses marked.js from CDN). Saving writes to the `configs/prompts/` directory via the API.
+**Visual editor**: The React control plane at port `5173` is primary. Its "Markdown prompt file" control opens a split-pane editor and saves beneath `configs/prompts/` through the API. The embedded port `8000` editor remains as a no-build fallback.
 
 **Path traversal protection**: `_resolve_prompt_path()` validates that resolved paths stay within `configs/prompts/`.
 
@@ -144,11 +159,12 @@ The built-in demo MCP server (`example_mcp_server.py`) also supports both format
 - `HOST` / `PORT` — server bind address (default: `127.0.0.1:8000`)
 - `RELOAD` — set `true` for uvicorn auto-reload
 - `RUN_FRONTEND` — `auto`/`true`/`false` for React Flow editor
+- `OLLAMA_BASE_URL` — native Ollama API URL (default: `http://127.0.0.1:11434`)
 - `LITELLM_BASE_URL` — default base URL for litellm/openai providers
 - `LITELLM_API_KEY` — fallback API key for litellm/openai providers
 
 ## What's Mocked vs Real
 
-**Real**: YAML validation, FastAPI routes, LangGraph execution, shared state, registries, SQLite persistence, MCP stdio path (dual-transport), visual editor save/load/run, markdown prompt files, prompt API endpoints, OpenAI/LiteLLM provider, McpCallNode, MCP error detection.
+**Real**: YAML validation, FastAPI routes, LangGraph execution, shared state, registries, SQLite persistence, MCP stdio path (dual-transport), visual editor save/load/run, markdown prompt files, prompt API endpoints, native Ollama provider, OpenAI/LiteLLM provider, McpCallNode, MCP error detection.
 
 **Mocked/placeholder**: Anthropic provider adapter, human approval pause/resume, advanced React Flow editor.

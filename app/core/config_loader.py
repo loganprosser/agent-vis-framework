@@ -92,7 +92,7 @@ class ConfigLoader:
 
     def _resolve_prompt_path(self, prompt_file: str) -> Path:
         resolved = (self.prompts_dir / prompt_file).resolve()
-        if not str(resolved).startswith(str(self.prompts_dir.resolve())):
+        if not resolved.is_relative_to(self.prompts_dir.resolve()):
             raise ValueError(f"Prompt file path escapes prompts directory: {prompt_file}")
         return resolved
 

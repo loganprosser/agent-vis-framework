@@ -79,7 +79,7 @@ app/ui.py
   Embedded no-build visual editor served at /.
 
 frontend/
-  Optional React/Vite/React Flow editor scaffold for a richer future UI.
+  Primary React/Vite/React Flow control plane for editing and runtime inspection.
 
 configs/workflows/
   Project workflow YAML files.
@@ -102,14 +102,19 @@ From the project root:
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
+./configure
 ./start.sh
 ```
 
 Open:
 
 ```text
-http://127.0.0.1:8000/
+http://127.0.0.1:5173/
 ```
+
+`./start.sh` manages both the FastAPI backend and the React control plane. The no-build fallback editor remains available at `http://127.0.0.1:8000/`.
+
+`./configure` persists local bind ports in the ignored `.runtime.env` file. `./configure-model` uses `fzf` to add or update modular model-provider configuration. The first interactive provider is native Ollama.
 
 Stop:
 
@@ -191,6 +196,7 @@ Node fields:
 - `provider`: model provider id from `configs/models.yaml`.
 - `model`: model name passed to the provider.
 - `system_prompt`: node-level prompt.
+- `system_prompt_file`: Markdown prompt path relative to `configs/prompts/`.
 - `input_keys`: values this node expects from inputs or prior outputs.
 - `output_keys`: values this node promises to produce.
 - `tools`: tool ids from `configs/tools.yaml`.
@@ -240,6 +246,29 @@ WorkflowState = {
 ```
 
 Nodes should treat this state as append/update-only. Avoid deleting data from other nodes unless the workflow explicitly owns that behavior.
+
+## Markdown Prompt Layout
+
+Prefer Markdown files over long inline prompts. Keep them nested so a coding agent can inspect the project structure quickly:
+
+```text
+configs/prompts/workflows/<workflow>/nodes/<node>.md
+configs/prompts/workflows/<workflow>/subsystems/<subsystem>/actions/<action>.md
+```
+
+Normal node `system_prompt_file` references are resolved by `GraphBuilder` and affect runtime execution. Burr topology action `prompt_file` references are visualization metadata unless the Python Burr factory explicitly loads them.
+
+## Model Providers
+
+Nodes call the provider-neutral `ModelProvider.generate()` interface. Provider construction belongs in `ModelRegistry`; keep provider-specific HTTP clients and options inside `app/models/`.
+
+The native Ollama adapter reads `base_url`, `context_length`, `temperature`, and `timeout_seconds` from its provider config. Configure it interactively:
+
+```bash
+./configure-model
+```
+
+This adds or updates `ollama_local` in `configs/models.yaml`. Assign that provider to individual workflow nodes in YAML or through the React control plane.
 
 ## How To Add A New Node Type
 

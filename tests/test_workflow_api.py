@@ -33,6 +33,35 @@ def test_workflow_export_marks_burr_nodes_as_subsystems() -> None:
     }
 
 
+def test_catalog_exposes_node_types_for_visual_editor_palette() -> None:
+    response = build_client().get("/catalog")
+
+    assert response.status_code == 200
+    assert "doc_reader" in response.json()["node_types"]
+    assert "burr_subsystem" in response.json()["node_types"]
+
+
+def test_validate_workflow_accepts_nested_burr_action_prompt_files() -> None:
+    client = build_client()
+    workflow = client.get("/workflows/branching_burr_requirements").json()
+    subsystem = next(node for node in workflow["nodes"] if node["type"] == "burr_subsystem")
+    topology = subsystem["config"]["topology"]
+    topology["actions"][0]["prompt_file"] = (
+        "workflows/branching_burr_requirements/subsystems/"
+        "validate_and_structure_requirements/actions/validate_requirements.md"
+    )
+    for node in workflow["nodes"]:
+        node.pop("subsystem", None)
+        node.pop("subsystem_metadata", None)
+
+    response = client.post("/workflows/validate", json=workflow)
+
+    assert response.status_code == 200
+    assert response.json()["workflow"]["nodes"][1]["config"]["topology"]["actions"][0][
+        "prompt_file"
+    ].endswith("actions/validate_requirements.md")
+
+
 def test_run_details_expose_burr_subsystem_metadata_and_artifact_links() -> None:
     client = build_client()
 

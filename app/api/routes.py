@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.core.config_loader import ConfigLoader
-from app.core.graph_builder import GraphBuilder
+from app.core.graph_builder import GraphBuilder, default_node_registry
 from app.core.registry import ModelRegistry, ToolRegistry
 from app.core.run_store import RunEvent, RunRecord, create_run_store
 from app.core.state import initial_state
@@ -85,7 +85,12 @@ def create_router(
         mcp_list = []
         for s in mcps.servers:
             mcp_list.append({"id": s.id, "name": s.name, "transport": s.transport, "enabled": s.enabled})
-        return {"providers": providers, "tools": tool_list, "mcps": mcp_list}
+        return {
+            "providers": providers,
+            "tools": tool_list,
+            "mcps": mcp_list,
+            "node_types": default_node_registry().registered_types(),
+        }
 
     @router.get("/workflows")
     async def list_workflows() -> dict[str, list[str]]:

@@ -19,6 +19,7 @@ class BurrActionConfig(BaseModel):
     writes: list[str] = Field(default_factory=list)
     model: str | None = None
     prompt: str = ""
+    prompt_file: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -159,7 +160,7 @@ class WorkflowConfig(BaseModel):
 
 class ModelProviderConfig(BaseModel):
     id: str
-    type: Literal["mock", "openai", "anthropic", "ibm", "litellm", "local"]
+    type: Literal["mock", "openai", "anthropic", "ibm", "litellm", "local", "ollama"]
     default_model: str
     config: dict[str, Any] = Field(default_factory=dict)
 
