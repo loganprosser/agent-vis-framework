@@ -16,11 +16,11 @@ python3 -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"
 pip install -e ".[dev,litellm]"
 
 # Run backend and React control plane (primary UI at http://127.0.0.1:5173/)
-./configure        # prompts for bind host, backend port, frontend port → writes .runtime.env
+./configure.sh        # prompts for bind host, backend port, frontend port → writes .runtime.env
 ./start.sh
 
 # Add or update a local Ollama provider with fzf
-./configure-model
+./configure-model.sh
 
 # Dev mode with auto-reload
 RELOAD=true ./start.sh
