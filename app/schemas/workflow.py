@@ -138,6 +138,8 @@ class WorkflowConfig(BaseModel):
     version: str = "0.1.0"
     description: str = ""
     entrypoint: str
+    default_provider: str | None = None
+    default_model: str | None = None
     nodes: list[NodeConfig]
     edges: list[EdgeConfig]
 

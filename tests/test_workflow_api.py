@@ -53,6 +53,7 @@ def test_validate_workflow_accepts_nested_burr_action_prompt_files() -> None:
     for node in workflow["nodes"]:
         node.pop("subsystem", None)
         node.pop("subsystem_metadata", None)
+        node.pop("_resolved", None)
 
     response = client.post("/workflows/validate", json=workflow)
 

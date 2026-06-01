@@ -1,0 +1,56 @@
+name: model_resolution_demo
+version: 0.1.0
+description: >
+  Demonstrates workflow-level default_provider and default_model.
+  - inherit_default: inherits both from workflow
+  - override_both: overrides provider and model at node level
+  - override_model_only: overrides model but inherits workflow provider
+default_provider: mock
+default_model: workflow-default-model
+entrypoint: inherit_default
+
+nodes:
+  - id: inherit_default
+    type: variable_extractor
+    system_prompt: Node that inherits workflow default_provider and default_model.
+    input_keys:
+      - requirements_doc
+    output_keys:
+      - variables
+    retry_policy:
+      max_attempts: 1
+      backoff_seconds: 0
+    human_approval: false
+
+  - id: override_both
+    type: variable_extractor
+    provider: mock
+    model: node-specific-model
+    system_prompt: Node that overrides both provider and model at node level.
+    input_keys:
+      - inherit_default
+    output_keys:
+      - variables
+    retry_policy:
+      max_attempts: 1
+      backoff_seconds: 0
+    human_approval: false
+
+  - id: override_model_only
+    type: variable_extractor
+    model: different-model-same-provider
+    system_prompt: Node that overrides only model, inheriting workflow default_provider.
+    input_keys:
+      - override_both
+    output_keys:
+      - variables
+    retry_policy:
+      max_attempts: 1
+      backoff_seconds: 0
+    human_approval: false
+
+edges:
+  - source: inherit_default
+    target: override_both
+  - source: override_both
+    target: override_model_only

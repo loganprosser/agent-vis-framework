@@ -102,7 +102,7 @@ From the project root:
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
-./configure
+./configure.sh
 ./start.sh
 ```
 
@@ -114,7 +114,7 @@ http://127.0.0.1:5173/
 
 `./start.sh` manages both the FastAPI backend and the React control plane. The no-build fallback editor remains available at `http://127.0.0.1:8000/`.
 
-`./configure` persists local bind ports in the ignored `.runtime.env` file. `./configure-model` uses `fzf` to add or update modular model-provider configuration. The first interactive provider is native Ollama.
+`./configure.sh` persists local bind ports in the ignored `.runtime.env` file. `./configure-model.sh` uses `fzf` to add or update modular model-provider configuration. The first interactive provider is native Ollama.
 
 Stop:
 
@@ -270,6 +270,42 @@ The native Ollama adapter reads `base_url`, `context_length`, `temperature`, and
 
 This adds or updates `ollama_local` in `configs/models.yaml`. Assign that provider to individual workflow nodes in YAML or through the React control plane.
 
+### Provider Types
+
+| Type | Adapter Class | Status | Config Keys |
+|------|---------------|--------|-------------|
+| `mock` | `MockModelProvider` | Real | `temperature` |
+| `ollama` | `OllamaModelProvider` | Real | `base_url`, `context_length`, `temperature`, `timeout_seconds` |
+| `openai` | `OpenAIModelProvider` | Real | `base_url`, `api_key_env`, `temperature` |
+| `litellm` | `OpenAIModelProvider` | Real | `base_url`, `api_key_env`, `temperature` |
+| `anthropic` | `AnthropicModelProvider` | Placeholder | `api_key_env` |
+| `ibm` | `OpenAIModelProvider` | Real | `base_url`, `api_key_env`, `temperature` |
+| `local` | `MockModelProvider` | Real | `temperature` |
+
+The `openai` type works with any OpenAI-compatible API (LiteLLM proxy, vLLM, IBM RITS). Set `base_url` and `api_key_env` in the provider config; the adapter lazy-imports the `openai` SDK. API keys always go in env vars, never YAML.
+
+### Burr Subsystem Model Passthrough
+
+`burr_subsystem` nodes automatically inject `ollama_model` and `ollama_base_url` into the factory call when their provider is `ollama`. The factory should accept these as optional kwargs:
+
+```python
+def build_my_app(problem_spec: str, *, ollama_model: str | None = None, ollama_base_url: str | None = None):
+    model = ollama_model or os.environ.get("OLLAMA_MODEL", "llama3.2")
+    base_url = ollama_base_url or os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+```
+
+This ensures Burr subsystems use the same model from `configs/models.yaml` without needing separate env vars.
+
+### Running Workflows From The Visual Editor
+
+The left panel has a **Run Inputs** section with three modes:
+
+1. **Fields** — auto-generates input fields from the entrypoint node's `input_keys`.
+2. **Paste curl** — extracts JSON from a pasted curl command and fills the fields.
+3. **Raw JSON** — manual `{"inputs": {...}}` body.
+
+After running, the right panel shows expandable sections per node: Node Output, Runtime Artifacts (burr), Burr Action Sequence (burr), and Subsystem Metadata (burr).
+
 ## How To Add A New Node Type
 
 1. Create a file in `app/nodes/`.
@@ -338,9 +374,32 @@ Provider adapter lives in `app/models/`.
 
 Steps:
 
-1. Create a class that subclasses `ModelProvider`.
-2. Implement `async def generate(self, request: ModelRequest) -> ModelResponse`.
-3. Register the provider type in `ModelRegistry`.
+1. Create a class that subclasses `ModelProvider` and implement `async def generate(self, request: ModelRequest) -> ModelResponse`:
+
+```python
+from app.models.base import ModelProvider, ModelRequest, ModelResponse
+
+
+class GeminiProvider(ModelProvider):
+    async def generate(self, request: ModelRequest) -> ModelResponse:
+        model = request.model or self.default_model
+        # Call your API here, using self.config for keys/URLs
+        return ModelResponse(text="...", raw={"provider": self.provider_id, "model": model})
+```
+
+2. Register the provider type in `ModelRegistry._provider_type_factories` in `app/core/registry.py`:
+
+```python
+from app.models.gemini_provider import GeminiProvider
+
+class ModelRegistry:
+    _provider_type_factories = {
+        ...
+        "gemini": lambda id, model, config: GeminiProvider(id, model, config),
+    }
+```
+
+3. Add a provider entry in `configs/models.yaml`.
 4. Reference the provider id from workflow nodes.
 
 Keep all vendor-specific code inside provider adapters. Nodes should not import OpenAI, Anthropic, IBM, etc. directly.
@@ -500,14 +559,20 @@ Real:
 - SQLite run persistence
 - MCP stdio initialize/list/call path
 - visual editor save/load/run path
+- native Ollama provider
+- OpenAI/LiteLLM provider
+- McpCallNode (generic MCP tool calls from YAML)
+- Burr subsystem lifecycle + tracing
+- Burr subsystem model passthrough (automatic `ollama_model`/`ollama_base_url` injection)
+- Markdown prompt API
+- React Flow control plane with structured run inputs, curl parsing, and collapsible output viewer
 
 Placeholder/mock:
 
 - most workflow node business logic
-- OpenAI/Anthropic provider adapters
+- Anthropic provider adapter
 - IBM `tnt-cli` reducer implementation
 - human approval pause/resume
-- advanced editor validation and rich React Flow UI
 
 ## Testing Expectations
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from langgraph.graph import END, StateGraph
 
 from app.core.config_loader import ConfigLoader
@@ -7,6 +9,9 @@ from app.core.registry import ModelRegistry, NodeRegistry, ToolRegistry
 from app.core.runtime_events import RuntimeEventStore
 from app.core.state import WorkflowState
 from app.nodes.burr_subsystem import BurrSubsystemNode
+
+logger = logging.getLogger(__name__)
+
 from app.nodes.constraint_builder import ConstraintBuilderNode
 from app.nodes.problem_analyzer import ProblemAnalyzerNode
 from app.nodes.solution_presenter import SolutionPresenterNode
@@ -78,6 +83,22 @@ class GraphBuilder:
                     "system_prompt_file": None,
                 })
 
+            # Resolve provider: node override → workflow default → registry fallback
+            resolved_provider = effective_config.provider or workflow.default_provider
+            model_provider = self.model_registry.get(resolved_provider)
+
+            # Resolve model: node override → workflow default → provider default
+            resolved_model = effective_config.model or workflow.default_model or None
+            if resolved_model is not None and resolved_model != effective_config.model:
+                effective_config = effective_config.model_copy(update={"model": resolved_model})
+
+            logger.info(
+                "Node %s resolved to provider=%s model=%s",
+                effective_config.id,
+                model_provider.provider_id,
+                effective_config.model or model_provider.default_model,
+            )
+
             tools = self.tool_registry.many(effective_config.tools)
             if self.event_store is not None:
                 tools = {
@@ -92,7 +113,7 @@ class GraphBuilder:
             node = self.node_registry.create(
                 effective_config.type,
                 config=effective_config,
-                model_provider=self.model_registry.get(effective_config.provider),
+                model_provider=model_provider,
                 tools=tools,
                 event_store=self.event_store,
             )

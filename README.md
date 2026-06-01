@@ -63,11 +63,11 @@ pip install -e ".[dev]"
 Start the API and visual editor:
 
 ```bash
-./configure
+./configure.sh
 ./start.sh
 ```
 
-`./configure` prompts for the persisted bind host, FastAPI backend port, and React control-plane port. It writes the ignored local file `.runtime.env`, which is read by `./start.sh` and `./status.sh`.
+`./configure.sh` prompts for the persisted bind host, FastAPI backend port, and React control-plane port. It writes the ignored local file `.runtime.env`, which is read by `./start.sh` and `./status.sh`.
 
 For development auto-reload:
 
@@ -125,7 +125,7 @@ Check status:
 If another project already uses port `5173`, choose another frontend port:
 
 ```bash
-./configure --frontend-port 5174
+./configure.sh --frontend-port 5174
 ./start.sh
 ```
 
@@ -146,7 +146,7 @@ ollama pull qwen2.5-coder:7b
 Configure a provider:
 
 ```bash
-./configure-model
+./configure-model.sh
 ```
 
 The script uses `fzf` to select:
@@ -162,11 +162,114 @@ provider: ollama_local
 model: qwen2.5-coder:7b
 ```
 
+Leave `model` empty or set it to `~` (null) to use the provider's `default_model`:
+
+```yaml
+provider: ollama_local
+model: ~
+```
+
 Check health:
 
 ```bash
 curl http://127.0.0.1:8000/health
 ```
+
+## Model Providers
+
+All model calls go through the provider-neutral `ModelProvider` interface. Nodes call `self.ask_model(...)` and never import provider SDKs directly. Providers are defined in `configs/models.yaml` and registered in `app/core/registry.py`.
+
+### Available Provider Types
+
+| Type | Adapter | Status | Config Keys |
+|------|---------|--------|-------------|
+| `mock` | `MockModelProvider` | Real | `temperature` |
+| `ollama` | `OllamaModelProvider` | Real | `base_url`, `context_length`, `temperature`, `timeout_seconds` |
+| `openai` | `OpenAIModelProvider` | Real | `base_url`, `api_key_env`, `temperature` |
+| `litellm` | `OpenAIModelProvider` | Real | `base_url`, `api_key_env`, `temperature` |
+| `anthropic` | `AnthropicModelProvider` | Placeholder | `api_key_env` |
+| `ibm` | `OpenAIModelProvider` | Real | `base_url`, `api_key_env`, `temperature` |
+| `local` | `MockModelProvider` | Real | `temperature` |
+
+The `openai` and `litellm` types both use `OpenAIModelProvider` with lazy SDK imports. The `ibm` type reuses it for RITS-compatible endpoints.
+
+### Provider Selection In The Editor
+
+The right panel inspector shows a **Provider** dropdown populated from `configs/models.yaml`. Each option shows `provider_id (type)`. Changing the provider auto-fills the **Model** field with that provider's `default_model`. Override it by typing a different model name, or leave it as-is.
+
+### Provider Config In YAML
+
+```yaml
+# configs/models.yaml
+providers:
+  - id: ollama_local
+    type: ollama
+    default_model: ibm/granite4.1:8b-q8_0
+    config:
+      base_url: http://127.0.0.1:11434
+      context_length: 16384
+      temperature: 0
+      timeout_seconds: 120
+
+  - id: openai_default
+    type: openai
+    default_model: gpt-4.1-mini
+    config:
+      api_key_env: OPENAI_API_KEY
+
+  - id: litellm_proxy
+    type: litellm
+    default_model: claude-sonnet-4-6
+    config:
+      base_url: https://my-litellm-proxy.example.com
+      api_key_env: LITELLM_API_KEY
+```
+
+API keys always go in environment variables (referenced by `api_key_env`), never in YAML.
+
+### Assigning Providers To Nodes
+
+In workflow YAML, set `provider` and optionally `model`:
+
+```yaml
+- id: my_node
+  type: doc_reader
+  provider: ollama_local
+  model: ~                    # use the provider's default_model
+```
+
+Or select them from the dropdowns in the visual editor.
+
+### Burr Subsystem Model Passthrough
+
+`burr_subsystem` nodes automatically forward their `provider` and `model` configuration to the Burr factory function. When the provider is `ollama`, the node injects `ollama_model` and `ollama_base_url` kwargs into the factory call. This means Burr subsystems use the same model from `configs/models.yaml` without needing a separate `OLLAMA_MODEL` environment variable.
+
+The factory function must accept these kwargs:
+
+```python
+def build_my_app(problem_spec: str, *, ollama_model: str | None = None, ollama_base_url: str | None = None):
+    model = ollama_model or os.environ.get("OLLAMA_MODEL", "llama3.2")
+    base_url = ollama_base_url or os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+    ...
+```
+
+## Running Workflows From The Visual Editor
+
+The left panel has a **Run Inputs** section with three input modes:
+
+1. **Fields** (default) — auto-generates an input field for each key from the workflow's entrypoint node `input_keys`. Just type your values and click Run.
+
+2. **Paste curl** — paste a full `curl -X POST ...` command and click **Parse & Fill**. It extracts the JSON body and fills the structured input fields.
+
+3. **Raw JSON** — type or paste the full `{"inputs": {...}}` request body directly.
+
+After a run completes, the left panel shows the run status and ID. The **Runtime Timeline** below shows every event. Select a node in the canvas to see its output in the right panel's expandable sections:
+
+- **Node Output** — the full JSON output from that node
+- **Runtime Artifacts** (burr_subsystem) — download links for trace and state files
+- **Burr Action Sequence** (burr_subsystem) — the draft/critique/evaluate loop
+- **Burr Action Events** (burr_subsystem) — per-action timing and status
+- **Subsystem Metadata** (burr_subsystem) — duration, halt reason, terminal state
 
 ## Use As A Template For Another Project
 
@@ -207,7 +310,7 @@ That command physically copies the framework into `../my-agent-workflow`, includ
 - `configs/`
 - `frontend/`
 - `tests/`
-- scripts like `start.sh` and `stop.sh`
+- scripts like `start.sh`, `stop.sh`, `configure.sh`, and `configure-model.sh`
 - docs like `README.md` and `CODING_AGENT_GUIDE.md`
 
 Now move into the copied project and run it:
@@ -373,13 +476,49 @@ See `configs/workflows/branching_burr_requirements.yaml` for a small Burr subsys
 
 ## Add A New Model Provider
 
-1. Create a provider adapter in `app/models`.
-2. Subclass `ModelProvider`.
-3. Implement `async def generate(...)`.
-4. Register the provider type in `ModelRegistry` in `app/core/registry.py`.
-5. Add a provider entry in `configs/models.yaml`.
+1. Create a provider adapter in `app/models/your_provider.py`.
+2. Subclass `ModelProvider` and implement `async def generate(self, request: ModelRequest) -> ModelResponse`:
 
-Provider-specific SDKs, auth, retries, request formatting, and response parsing should stay inside the adapter.
+```python
+from app.models.base import ModelProvider, ModelRequest, ModelResponse
+
+
+class YourProvider(ModelProvider):
+    async def generate(self, request: ModelRequest) -> ModelResponse:
+        model = request.model or self.default_model
+        # Call your API here, using self.config for base_url, api_key, etc.
+        text = "response from your API"
+        return ModelResponse(text=text, raw={"provider": self.provider_id, "model": model})
+```
+
+3. Register the provider type in `ModelRegistry._provider_type_factories` in `app/core/registry.py`:
+
+```python
+from app.models.your_provider import YourProvider
+
+class ModelRegistry:
+    _provider_type_factories = {
+        ...
+        "your_type": lambda id, model, config: YourProvider(id, model, config),
+    }
+```
+
+4. Add a provider entry in `configs/models.yaml`:
+
+```yaml
+providers:
+  - id: your_provider
+    type: your_type
+    default_model: your-model-name
+    config:
+      base_url: https://api.example.com
+      api_key_env: YOUR_API_KEY
+      temperature: 0.7
+```
+
+5. Use it in workflow YAML or select it from the Provider dropdown in the editor.
+
+Provider-specific SDKs, auth, retries, request formatting, and response parsing should stay inside the adapter. Nodes must not import provider SDKs directly.
 
 ## Add A New Tool Or MCP
 

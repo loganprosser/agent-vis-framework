@@ -162,17 +162,42 @@ class BurrSubsystemNode(BaseSubsystemNode):
         return factory
 
     def _inject_provider_kwargs(self, factory_inputs: dict[str, Any]) -> None:
-        """Forward model provider details to the Burr factory so it uses the
-        same model configured in the workflow YAML instead of env vars."""
-        from app.models.ollama_provider import OllamaModelProvider
+        """Forward resolved model provider details to the Burr factory so it
+        uses the same model configured in the workflow YAML instead of env vars.
+
+        Only injects kwargs that the factory actually accepts (inspected via
+        signature). This is provider-agnostic — any factory can opt into
+        receiving model/provider info by declaring the matching parameters.
+        """
+        import inspect
 
         provider = self.model_provider
+        model = self.config.model or provider.default_model
+
+        available: dict[str, Any] = {
+            "provider_id": provider.provider_id,
+            "model": model,
+        }
+        if base_url := provider.config.get("base_url"):
+            available["base_url"] = base_url
+
+        # Legacy Ollama-specific kwargs — kept for backward compat with
+        # existing factories that expect ollama_model / ollama_base_url
+        from app.models.ollama_provider import OllamaModelProvider
         if isinstance(provider, OllamaModelProvider):
-            factory_inputs.setdefault("ollama_model", self.config.model or provider.default_model)
-            factory_inputs.setdefault(
-                "ollama_base_url",
-                provider.config.get("base_url") or "http://127.0.0.1:11434",
-            )
+            available["ollama_model"] = model
+            available["ollama_base_url"] = provider.config.get("base_url") or "http://127.0.0.1:11434"
+
+        # Only inject kwargs the factory actually accepts
+        factory = self._load_factory()
+        sig = inspect.signature(factory)
+        accepts_kwargs = any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+        )
+        for key, value in available.items():
+            if key not in factory_inputs:
+                if accepts_kwargs or key in sig.parameters:
+                    factory_inputs[key] = value
 
     def _run_application(self, application: Any) -> Any:
         halt_after = self.burr_config.halt_after

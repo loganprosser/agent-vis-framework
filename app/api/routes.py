@@ -30,6 +30,13 @@ def export_workflow(
     nodes_by_id = {node.id: node for node in workflow.nodes}
     for node_data in data.get("nodes", []):
         node_config = nodes_by_id[node_data["id"]]
+        # Include resolved provider/model info for each node
+        resolved_provider = node_config.provider or workflow.default_provider
+        resolved_model = node_config.model or workflow.default_model
+        node_data["_resolved"] = {
+            "provider": resolved_provider,
+            "model": resolved_model,
+        }
         if node_data.get("system_prompt_file") and config_loader:
             node_data["resolved_system_prompt"] = config_loader.resolve_system_prompt(node_config)
         if node_config.type == "burr_subsystem":

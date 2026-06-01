@@ -14,6 +14,13 @@ providers:
   default_model: claude-3-5-sonnet-latest
   config:
     api_key_env: ANTHROPIC_API_KEY
+- id: litellm
+  type: litellm
+  default_model: gpt-4.1-mini
+  config:
+    base_url: http://localhost:4002/v1
+    api_key_env: LITELLM_API_KEY
+    temperature: 0
 - id: ollama_local
   type: ollama
   default_model: ibm/granite4.1:8b-q8_0

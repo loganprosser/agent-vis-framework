@@ -1,0 +1,54 @@
+name: mixed_provider_demo
+version: 0.1.0
+description: >
+  Demonstrates per-node provider resolution: one node uses mock, another
+  uses litellm. The mock node always works; the litellm node requires a
+  running LiteLLM proxy (or falls back gracefully on provider error).
+default_provider: mock
+default_model: mock-deterministic
+entrypoint: mock_reader
+
+nodes:
+  - id: mock_reader
+    type: doc_reader
+    system_prompt: Read a short requirements document and summarize it.
+    input_keys:
+      - requirements_doc
+    output_keys:
+      - documents
+    retry_policy:
+      max_attempts: 1
+      backoff_seconds: 0
+    human_approval: false
+
+  - id: litellm_extractor
+    type: variable_extractor
+    provider: litellm
+    model: gpt-4.1-mini
+    system_prompt: Extract test variables using the litellm provider.
+    input_keys:
+      - mock_reader
+    output_keys:
+      - variables
+    retry_policy:
+      max_attempts: 1
+      backoff_seconds: 0
+    human_approval: false
+
+  - id: mock_report
+    type: report_generator
+    system_prompt: Produce a short markdown report.
+    input_keys:
+      - variables
+    output_keys:
+      - final_report
+    retry_policy:
+      max_attempts: 1
+      backoff_seconds: 0
+    human_approval: false
+
+edges:
+  - source: mock_reader
+    target: litellm_extractor
+  - source: litellm_extractor
+    target: mock_report

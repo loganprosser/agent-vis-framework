@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 
 from app.models.anthropic_provider import AnthropicModelProvider
@@ -18,6 +19,8 @@ from app.tools.tnt_cli_tool import TntCliTool
 ModelFactory = Callable[[ModelProviderConfig], ModelProvider]
 ToolFactory = Callable[[ToolConfig], Tool]
 NodeFactory = Callable[..., BaseNode]
+
+logger = logging.getLogger(__name__)
 
 
 class ModelRegistry:
@@ -43,10 +46,14 @@ class ModelRegistry:
     def get(self, provider_id: str | None) -> ModelProvider:
         if provider_id and provider_id in self._providers:
             return self._providers[provider_id]
+        fallback = None
         if "mock" in self._providers:
-            return self._providers["mock"]
-        if self._providers:
-            return next(iter(self._providers.values()))
+            fallback = self._providers["mock"]
+        elif self._providers:
+            fallback = next(iter(self._providers.values()))
+        if fallback is not None:
+            logger.debug("Provider %s not found, falling back to %s", provider_id, fallback.provider_id)
+            return fallback
         raise ValueError("No model providers are registered.")
 
 
