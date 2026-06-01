@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Config-driven FastAPI + LangGraph framework for reusable multi-agent workflows. Workflows are YAML-directed graphs; nodes are typed Python classes; models/tools/MCPs live behind adapters. Includes a React control plane, a no-build fallback editor, Markdown prompt editing, and SQLite run persistence.
+Config-driven FastAPI + LangGraph framework for reusable multi-agent workflows. Workflows are YAML-directed graphs; nodes are typed Python classes; models/tools/MCPs live behind adapters. Includes a React control plane (Vite/React Flow at port 5173), a no-build fallback editor (port 8000), Markdown prompt editing, and SQLite run persistence.
 
 ## Commands
 
@@ -16,7 +16,7 @@ python3 -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"
 pip install -e ".[dev,litellm]"
 
 # Run backend and React control plane (primary UI at http://127.0.0.1:5173/)
-./configure
+./configure        # prompts for bind host, backend port, frontend port → writes .runtime.env
 ./start.sh
 
 # Add or update a local Ollama provider with fzf
@@ -25,17 +25,13 @@ pip install -e ".[dev,litellm]"
 # Dev mode with auto-reload
 RELOAD=true ./start.sh
 
-# Stop server
-./stop.sh
+./stop.sh          # stop both services
+./status.sh        # check running services
 
-# Status check
-./status.sh
-
-# Run all tests
+# Tests
 pytest
-
-# Run a single test file
-pytest tests/test_mcp_tool.py
+pytest tests/test_mcp_tool.py    # single file
+pytest tests/test_run_store.py
 
 # Validate configs
 python -m app.cli validate --config-dir configs
@@ -60,6 +56,8 @@ curl -X POST http://127.0.0.1:8000/workflows/starter_three_node/run \
 
 **Node registration** (`app/core/graph_builder.py`): `default_node_registry()` maps YAML `type` values to node classes. New node types must be registered here.
 
+**Frontend** (`frontend/`): React 19 + Vite + ReactFlow. Source files in `frontend/src/` — `main.tsx` (entry), `editor-panels.tsx` (panels), `types.ts` (TypeScript types). Run via `npm run dev` inside `frontend/` or automatically through `./start.sh`.
+
 ## Key Conventions
 
 - **New node type**: subclass `BaseNode`, implement `async def run(self, state) -> dict`, register in `default_node_registry()`, use type string in workflow YAML
@@ -67,104 +65,61 @@ curl -X POST http://127.0.0.1:8000/workflows/starter_three_node/run \
 - **New tool**: subclass `Tool`, implement `async def run(...)`, register in `ToolRegistry._tool_type_factories`, add entry in `configs/tools.yaml`
 - **MCP server**: add command to `configs/mcps.yaml`, expose as `type: mcp` tool in `configs/tools.yaml` with `config.server_id`, attach tool id to a node's `tools` list
 - Nodes use `self.ask_model(...)` for model calls and `self.tools["tool_id"].run(...)` for tools — never import provider SDKs directly in node code
-- API keys go in env vars, never in YAML
 - Keep provider-specific code inside `app/models/` adapters; tool/MCP code inside `app/tools/` adapters
-
-`./configure` persists local ports in the ignored `.runtime.env` file. `./configure-model` currently supports a native `ollama` provider and uses `fzf` to select an installed local model and context window.
+- API keys go in env vars, not YAML
 
 ## Markdown Prompt Files
 
-Nodes can reference prompt content from `.md` files instead of inline `system_prompt` text. Set `system_prompt_file` on a node to a path relative to `configs/prompts/`.
+Nodes can reference `.md` files instead of inline `system_prompt`. Set `system_prompt_file` on a node to a path relative to `configs/prompts/`. `GraphBuilder` loads the file at compile time; missing files fall back to inline `system_prompt`.
 
-```yaml
-# In a workflow node:
-system_prompt: Fallback text if file is missing
-system_prompt_file: doc_reader.md
-```
-
-The file is resolved as `configs/prompts/<system_prompt_file>`. At graph compilation time, `GraphBuilder` loads the file content and replaces `system_prompt` with the resolved text. If the file is missing, the inline `system_prompt` is used as a fallback.
-
-Prefer nested files:
-
+Prefer nested layout:
 ```text
 configs/prompts/workflows/<workflow>/nodes/<node>.md
 configs/prompts/workflows/<workflow>/subsystems/<subsystem>/actions/<action>.md
 ```
 
-Normal node `system_prompt_file` references affect runtime execution. Burr topology action `prompt_file` references are visualization metadata unless the Python Burr factory explicitly loads them.
+Prompt API: `GET/PUT/DELETE /prompts/{path}`, `GET /prompts`.
 
-**API endpoints**:
-- `GET /prompts` — list all `.md` files in `configs/prompts/`
-- `GET /prompts/{path}` — read a prompt file
-- `PUT /prompts/{path}` — create or update a prompt file (body: `{"content": "..."}`)
-- `DELETE /prompts/{path}` — delete a prompt file
+Burr topology action `prompt_file` references are visualization metadata only — the Python Burr factory must explicitly load them.
 
-**Visual editor**: The React control plane at port `5173` is primary. Its "Markdown prompt file" control opens a split-pane editor and saves beneath `configs/prompts/` through the API. The embedded port `8000` editor remains as a no-build fallback.
+## Burr Subsystem Nodes
 
-**Path traversal protection**: `_resolve_prompt_path()` validates that resolved paths stay within `configs/prompts/`.
+Use `type: burr_subsystem` when a workflow node should run an internal Burr application. The `config.app_module` / `config.app_factory` points to a Python factory returning a Burr `ApplicationBuilder` or built application. Set exactly one of `halt_after` or `terminal_states`.
+
+The optional `topology` block is declarative editor metadata (entrypoint, actions, transitions); the Python factory is the runtime source of truth.
+
+Artifacts: `burr_final_state.json`, `burr_node_metadata.json`, `burr_trace.json`. Factories returning `ApplicationBuilder` get full action-level trace via Burr hooks; pre-built applications get minimal subsystem-level trace.
+
+See `configs/workflows/branching_burr_requirements.yaml` for a working example.
 
 ## McpCallNode
 
-A generic node type (`mcp_call`) for calling a specific MCP tool by name. Config-driven — no custom Python needed.
-
-```yaml
-# In a workflow node:
-type: mcp_call
-tools: [my_mcp_tool]
-config:
-  mcp_tool_name: calculate_coverage
-  arguments:
-    parameters: "{extract_variables.result}"
-```
-
-**Argument resolution**: String values wrapped in `{...}` are resolved from prior node outputs using `{node_id.key}` dot-notation paths. Non-string values pass through unchanged.
+Generic node type (`mcp_call`) for calling a specific MCP tool by name — no custom Python needed. String values wrapped in `{node_id.key}` in `config.arguments` are resolved from prior node outputs.
 
 ## LiteLLM / OpenAI Provider
 
-The `openai` and `litellm` provider types use `OpenAIModelProvider`, which connects to any OpenAI-compatible API (direct OpenAI, LiteLLM proxy, IBM RITS, etc.).
+Both `openai` and `litellm` types use `OpenAIModelProvider`. Requires `pip install openai` or `pip install -e ".[litellm]"` (imported lazily). Config keys: `base_url`, `api_key_env`, `temperature`. Defaults to `LITELLM_BASE_URL` / `LITELLM_API_KEY` env vars.
 
-```yaml
-# In configs/models.yaml:
-providers:
-  - id: my_litellm
-    type: litellm
-    default_model: GLM-5.1-FP8
-    config:
-      api_key_env: LITELLM_API_KEY
-      temperature: 0
-```
+## MCP Transport
 
-**Config keys**:
-- `base_url` — API base URL (default: `LITELLM_BASE_URL` env var or `http://localhost:4002/v1`)
-- `api_key_env` — env var name for the API key (default: `OPENAI_API_KEY`, falls back to `LITELLM_API_KEY`)
-- `temperature` — sampling temperature (default: 0)
-
-Requires `pip install openai` or `pip install -e ".[litellm]"`. The `openai` package is imported lazily on first use — if missing, the provider raises `RuntimeError` with install instructions.
-
-## MCP Dual-Transport Support
-
-The MCP client (`StdioMcpClient`) auto-detects whether the server uses Content-Length framed or NDJSON transport. It sends in NDJSON format (compatible with the official TypeScript MCP SDK) and detects the server's format on the first response.
-
-The built-in demo MCP server (`example_mcp_server.py`) also supports both formats — it reads either format and sends NDJSON.
-
-**Environment variable expansion**: Server commands in `configs/mcps.yaml` support `{env:VAR_NAME}` syntax (e.g., `{env:TESTFORGE_REPO_DIR}`). Missing env vars produce an empty string, which triggers a clear error message at startup.
-
-**Error handling**: `McpTool` checks for `isError: true` in MCP responses and returns a `ToolResult` with `ok=False` and the error text from the response content.
+`StdioMcpClient` auto-detects Content-Length framed vs NDJSON transport. Server commands in `configs/mcps.yaml` support `{env:VAR_NAME}` expansion and `{python}` / `{project_root}` placeholders.
 
 ## Environment Variables
 
-- `WORKFLOW_CONFIG_DIR` — override config directory (default: `./configs`)
-- `WORKFLOW_RUN_STORE` — `sqlite` (default) or `memory`
-- `WORKFLOW_RUN_DB` — SQLite path (default: `.runs/workflows.sqlite3`)
-- `HOST` / `PORT` — server bind address (default: `127.0.0.1:8000`)
-- `RELOAD` — set `true` for uvicorn auto-reload
-- `RUN_FRONTEND` — `auto`/`true`/`false` for React Flow editor
-- `OLLAMA_BASE_URL` — native Ollama API URL (default: `http://127.0.0.1:11434`)
-- `LITELLM_BASE_URL` — default base URL for litellm/openai providers
-- `LITELLM_API_KEY` — fallback API key for litellm/openai providers
+| Variable | Default | Purpose |
+|---|---|---|
+| `WORKFLOW_CONFIG_DIR` | `./configs` | Config directory override |
+| `WORKFLOW_RUN_STORE` | `sqlite` | `sqlite` or `memory` |
+| `WORKFLOW_RUN_DB` | `.runs/workflows.sqlite3` | SQLite path |
+| `HOST` / `PORT` | `127.0.0.1:8000` | Server bind |
+| `RELOAD` | — | `true` for uvicorn auto-reload |
+| `RUN_FRONTEND` | `auto` | `auto`/`true`/`false` |
+| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Native Ollama API |
+| `LITELLM_BASE_URL` | — | Default base URL for litellm/openai |
+| `LITELLM_API_KEY` | — | Fallback API key for litellm/openai |
 
-## What's Mocked vs Real
+## What's Real vs Mocked
 
-**Real**: YAML validation, FastAPI routes, LangGraph execution, shared state, registries, SQLite persistence, MCP stdio path (dual-transport), visual editor save/load/run, markdown prompt files, prompt API endpoints, native Ollama provider, OpenAI/LiteLLM provider, McpCallNode, MCP error detection.
+**Real**: YAML validation, FastAPI routes, LangGraph execution, shared state, registries, SQLite persistence, MCP stdio (dual-transport), visual editor save/load/run, markdown prompt API, native Ollama provider, OpenAI/LiteLLM provider, McpCallNode, Burr subsystem lifecycle + tracing.
 
-**Mocked/placeholder**: Anthropic provider adapter, human approval pause/resume, advanced React Flow editor.
+**Mocked/placeholder**: Anthropic provider adapter, human approval pause/resume, IBM `tnt-cli` reducer, most workflow node business logic.

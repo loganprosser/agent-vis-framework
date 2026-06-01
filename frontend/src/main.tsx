@@ -612,18 +612,35 @@ function TopologyEditor(props: {
   );
 }
 
-function SubsystemInspector(props: {
-  node: WorkflowNode;
-  workflowName: string;
-  metadata?: SubsystemRunMetadata;
-  artifacts: Record<string, unknown>;
-  runId?: string;
-  runtime?: NodeRuntimeState;
-  openPrompt: (target: PromptTarget) => void;
-  updateConfig: (patch: Partial<BurrSubsystemConfig>) => void;
-  setStatus: (value: string) => void;
+function CollapsibleSection(props: {
+  title: string;
+  badge?: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
 }) {
-  const config = subsystemConfig(props.node);
+  const [open, setOpen] = useState(props.defaultOpen ?? false);
+  return (
+    <div className={`collapsible-section ${open ? "open" : ""}`}>
+      <button className="collapsible-header" onClick={() => setOpen(!open)}>
+        <span className="collapsible-arrow">{open ? "▼" : "▶"}</span>
+        <strong>{props.title}</strong>
+        {props.badge && <span className="collapsible-badge">{props.badge}</span>}
+      </button>
+      {open && <div className="collapsible-body">{props.children}</div>}
+    </div>
+  );
+}
+
+function NodeOutputViewer(props: {
+  node: WorkflowNode;
+  nodeOutputs: Record<string, unknown>;
+  runId?: string;
+  artifacts: Record<string, unknown>;
+  metadata?: SubsystemRunMetadata;
+  runtime?: NodeRuntimeState;
+}) {
+  const output = props.nodeOutputs[props.node.id];
+  const hasOutput = output !== undefined && output !== null;
   const artifactNames = Object.keys(props.artifacts)
     .filter((name) => name.endsWith(".json"))
     .sort((left, right) => {
@@ -640,6 +657,77 @@ function SubsystemInspector(props: {
     .filter((event) => event.event_type !== "burr_action_started")
     .slice(-10)
     .map((event) => eventAction(event) ?? "unknown action");
+
+  return (
+    <div className="node-output-viewer">
+      <CollapsibleSection title="Node Output" badge={hasOutput ? "data" : undefined} defaultOpen={true}>
+        {hasOutput
+          ? <pre className="output-pre">{JSON.stringify(output, null, 2)}</pre>
+          : <span className="subtle">No output recorded yet. Run the workflow to see results.</span>}
+      </CollapsibleSection>
+
+      {props.node.type === "burr_subsystem" && (
+        <>
+          <CollapsibleSection title="Runtime Artifacts" badge={artifactNames.length ? String(artifactNames.length) : undefined} defaultOpen={true}>
+            <div className="artifact-list">
+              {artifactNames.length && props.runId
+                ? artifactNames.map((name) => (
+                    <a
+                      key={name}
+                      href={`/runs/${encodeURIComponent(props.runId!)}/artifacts/${encodeURIComponent(props.node.id)}/${encodeURIComponent(name)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {name}
+                    </a>
+                  ))
+                : <span className="subtle">Run this workflow to inspect Burr state and trace artifacts.</span>}
+            </div>
+          </CollapsibleSection>
+
+          <CollapsibleSection title="Burr Action Sequence" badge={recentActionSequence.length ? String(recentActionSequence.length) : undefined} defaultOpen={recentActionSequence.length > 0}>
+            <div className="action-sequence">
+              {recentActionSequence.length
+                ? recentActionSequence.map((action, index) => <code key={`${action}-${index}`}>{action}</code>)
+                : <span className="subtle">No completed internal Burr actions recorded yet.</span>}
+            </div>
+          </CollapsibleSection>
+
+          <CollapsibleSection title="Burr Action Events" badge={recentActionEvents.length ? String(recentActionEvents.length) : undefined}>
+            <div className="action-event-list">
+              {recentActionEvents.length
+                ? recentActionEvents.map((event) => (
+                    <div key={event.id}>
+                      <code>{eventAction(event) ?? "unknown action"}</code>
+                      <span>{event.event_type.replace("burr_action_", "")}</span>
+                    </div>
+                  ))
+                : <span className="subtle">No internal Burr actions recorded yet.</span>}
+            </div>
+          </CollapsibleSection>
+
+          <CollapsibleSection title="Subsystem Metadata" badge={props.metadata ? "ok" : undefined}>
+            {props.metadata && <pre className="output-pre">{JSON.stringify(props.metadata, null, 2)}</pre>}
+            {!props.metadata && <span className="subtle">Run this workflow to inspect subsystem metadata.</span>}
+          </CollapsibleSection>
+        </>
+      )}
+    </div>
+  );
+}
+
+function SubsystemInspector(props: {
+  node: WorkflowNode;
+  workflowName: string;
+  metadata?: SubsystemRunMetadata;
+  artifacts: Record<string, unknown>;
+  runId?: string;
+  runtime?: NodeRuntimeState;
+  openPrompt: (target: PromptTarget) => void;
+  updateConfig: (patch: Partial<BurrSubsystemConfig>) => void;
+  setStatus: (value: string) => void;
+}) {
+  const config = subsystemConfig(props.node);
   const haltMode = config.terminal_states ? "terminal_states" : "halt_after";
   const haltValues = config.terminal_states ?? config.halt_after ?? [];
   const runtimeStatus = visibleNodeStatus(props.node, props.runtime);
@@ -724,43 +812,117 @@ function SubsystemInspector(props: {
         openPrompt={props.openPrompt}
         setStatus={props.setStatus}
       />
-      <div className="runtime-panel">
-        <h3>Runtime Artifacts</h3>
-        <div className="artifact-list">
-          {artifactNames.length && props.runId
-            ? artifactNames.map((name) => (
-                <a
-                  key={name}
-                  href={`/runs/${encodeURIComponent(props.runId!)}/artifacts/${encodeURIComponent(props.node.id)}/${encodeURIComponent(name)}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {name}
-                </a>
-              ))
-            : <span>Run this workflow to inspect Burr state and trace artifacts.</span>}
+    </div>
+  );
+}
+
+function parseCurlBody(text: string): Record<string, unknown> | null {
+  // Try to extract the -d/--data/--data-raw body from a curl command
+  const dataMatch = text.match(/(?:-d\s+|--data(?:-raw)?\s+)'({[\s\S]*?})'/)
+    ?? text.match(/(?:-d\s+|--data(?:-raw)?\s+)"({[\s\S]*?})"/)
+    ?? text.match(/(?:-d\s+|--data(?:-raw)?\s+)({[\s\S]*?})(?:\s|$)/);
+  if (!dataMatch) return null;
+  try {
+    return JSON.parse(dataMatch[1]);
+  } catch {
+    return null;
+  }
+}
+
+function RunInputPanel(props: {
+  workflow: Workflow;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const entrypointNode = props.workflow.nodes.find((node) => node.id === props.workflow.entrypoint);
+  const inputKeys = entrypointNode?.input_keys ?? [];
+
+  const [mode, setMode] = useState<"structured" | "curl" | "raw">(
+    inputKeys.length > 0 ? "structured" : "raw",
+  );
+  const [curlText, setCurlText] = useState("");
+  const [structuredInputs, setStructuredInputs] = useState<Record<string, string>>(() => {
+    const existing: Record<string, unknown> = (() => {
+      try { return JSON.parse(props.value).inputs ?? {}; } catch { return {}; }
+    })();
+    return Object.fromEntries(inputKeys.map((key) => [key, typeof existing[key] === "string" ? existing[key] as string : ""]));
+  });
+
+  const syncFromStructured = (inputs: Record<string, string>) => {
+    const cleaned = Object.fromEntries(Object.entries(inputs).filter(([, v]) => v !== ""));
+    props.onChange(JSON.stringify({ inputs: cleaned }, null, 2));
+  };
+
+  const updateInput = (key: string, value: string) => {
+    const next = { ...structuredInputs, [key]: value };
+    setStructuredInputs(next);
+    syncFromStructured(next);
+  };
+
+  const applyCurl = () => {
+    const parsed = parseCurlBody(curlText);
+    if (!parsed) {
+      return;
+    }
+    const inputs = (parsed as { inputs?: Record<string, unknown> }).inputs ?? parsed;
+    const filled = Object.fromEntries(inputKeys.map((key) => [key, typeof inputs[key] === "string" ? inputs[key] as string : JSON.stringify(inputs[key])]));
+    setStructuredInputs(filled);
+    syncFromStructured(filled);
+    setMode("structured");
+  };
+
+  return (
+    <div className="run-input-panel">
+      <div className="section-heading">
+        <h2>Run Inputs</h2>
+        <div className="mode-tabs">
+          {inputKeys.length > 0 && (
+            <button className={mode === "structured" ? "active" : ""} onClick={() => setMode("structured")}>Fields</button>
+          )}
+          <button className={mode === "curl" ? "active" : ""} onClick={() => setMode("curl")}>Paste curl</button>
+          <button className={mode === "raw" ? "active" : ""} onClick={() => setMode("raw")}>Raw JSON</button>
         </div>
-        <h3>Recent Burr Action Sequence</h3>
-        <div className="action-sequence">
-          {recentActionSequence.length
-            ? recentActionSequence.map((action, index) => <code key={`${action}-${index}`}>{action}</code>)
-            : <span>No completed internal Burr actions recorded yet.</span>}
-        </div>
-        <h3>Recent Burr Action Events</h3>
-        <div className="action-event-list">
-          {recentActionEvents.length
-            ? recentActionEvents.map((event) => (
-                <div key={event.id}>
-                  <code>{eventAction(event) ?? "unknown action"}</code>
-                  <span>{event.event_type.replace("burr_action_", "")}</span>
-                </div>
-              ))
-            : <span>No internal Burr actions recorded yet.</span>}
-        </div>
-        <h3>_subsystems.{props.node.id} Metadata</h3>
-        {props.metadata && <pre>{JSON.stringify(props.metadata, null, 2)}</pre>}
-        {!props.metadata && <span className="subtle">Run this workflow to inspect subsystem metadata.</span>}
       </div>
+      {mode === "structured" && inputKeys.length > 0 && (
+        <div className="structured-inputs">
+          {inputKeys.map((key) => (
+            <label className="field" key={key}>
+              <span>{key}</span>
+              <textarea
+                value={structuredInputs[key] ?? ""}
+                onChange={(event) => updateInput(key, event.target.value)}
+                rows={3}
+                placeholder={`Value for ${key}`}
+              />
+            </label>
+          ))}
+        </div>
+      )}
+      {mode === "curl" && (
+        <div className="curl-input">
+          <label className="field">
+            <span>Paste a curl command</span>
+            <textarea
+              value={curlText}
+              onChange={(event) => setCurlText(event.target.value)}
+              rows={5}
+              placeholder={`curl -X POST http://localhost:8000/workflows/my_workflow/run \\\n  -H 'Content-Type: application/json' \\\n  -d '{"inputs":{"key":"value"}}'`}
+            />
+          </label>
+          <button className="primary" onClick={applyCurl}>Parse &amp; Fill</button>
+        </div>
+      )}
+      {mode === "raw" && (
+        <label className="field">
+          <span>Request body JSON</span>
+          <textarea
+            className="raw-input"
+            value={props.value}
+            onChange={(event) => props.onChange(event.target.value)}
+            rows={6}
+          />
+        </label>
+      )}
     </div>
   );
 }
@@ -788,6 +950,7 @@ function App() {
       setSelectedNodeId(loaded.nodes[0]?.id ?? null);
       setRunRecord(null);
       setRunEvents([]);
+      setRunInput('{\n  "inputs": {}\n}');
       setStatus(`Loaded ${name}`);
     } catch (error) {
       setStatus((error as Error).message);
@@ -1054,10 +1217,14 @@ function App() {
             </button>
           ))}
         </div>
-        <label className="field run-input">
-          <span>Run request JSON</span>
-          <textarea value={runInput} onChange={(event) => setRunInput(event.target.value)} rows={6} />
-        </label>
+        {workflow && (
+          <RunInputPanel
+            key={workflow.name}
+            workflow={workflow}
+            value={runInput}
+            onChange={setRunInput}
+          />
+        )}
         {runRecord && (
           <div className="run-summary">
             <h2>Latest Run</h2>
@@ -1122,6 +1289,16 @@ function App() {
             openPrompt={(target) => void openPrompt(target)}
             updateConfig={updateSubsystemConfig}
             setStatus={setStatus}
+          />
+        )}
+        {selectedNode && (
+          <NodeOutputViewer
+            node={selectedNode}
+            nodeOutputs={runRecord?.state?.node_outputs ?? {}}
+            runId={runRecord?.run_id}
+            artifacts={subsystemArtifacts}
+            metadata={subsystemMetadata}
+            runtime={selectedNodeRuntime}
           />
         )}
         {selectedNode && workflow && workflow.nodes.length > 1 && (

@@ -683,6 +683,145 @@ h3 {
   margin-top: 4px;
 }
 
+/* --- Collapsible sections --- */
+
+.collapsible-section {
+  border: 1px solid #30394a;
+  border-radius: 8px;
+  background: rgba(12, 17, 25, .42);
+  overflow: hidden;
+}
+
+.collapsible-section + .collapsible-section {
+  margin-top: 6px;
+}
+
+.collapsible-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  border-radius: 8px;
+  background: rgba(21, 27, 37, .85);
+  padding: 9px 11px;
+  text-align: left;
+  font-size: 12px;
+}
+
+.collapsible-header:hover {
+  background: rgba(33, 43, 58, .85);
+}
+
+.collapsible-arrow {
+  color: #91a0b6;
+  font-size: 10px;
+  width: 14px;
+  flex-shrink: 0;
+}
+
+.collapsible-header strong {
+  color: #eef2f7;
+}
+
+.collapsible-badge {
+  margin-left: auto;
+  border-radius: 99px;
+  background: rgba(59, 130, 246, .2);
+  padding: 2px 7px;
+  color: #bfdbfe;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.collapsible-body {
+  padding: 10px 11px 11px;
+}
+
+/* --- Node output viewer --- */
+
+.node-output-viewer {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid #30394a;
+  padding-top: 12px;
+}
+
+.node-output-viewer .subtle {
+  color: #91a0b6;
+  font-size: 11px;
+}
+
+.output-pre {
+  max-height: 260px;
+  overflow: auto;
+  margin: 0;
+  border-radius: 5px;
+  background: #0c1119;
+  padding: 8px;
+  color: #cbd5e1;
+  font-size: 10px;
+  white-space: pre-wrap;
+}
+
+/* --- Run input panel --- */
+
+.run-input-panel {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid #30394a;
+  padding-top: 12px;
+}
+
+.mode-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.mode-tabs button {
+  padding: 4px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .03em;
+  border-radius: 5px;
+}
+
+.mode-tabs button.active {
+  border-color: #60a5fa;
+  background: rgba(59, 130, 246, .22);
+  color: #bfdbfe;
+}
+
+.structured-inputs {
+  display: grid;
+  gap: 7px;
+}
+
+.structured-inputs textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  resize: vertical;
+}
+
+.curl-input {
+  display: grid;
+  gap: 7px;
+}
+
+.curl-input textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  resize: vertical;
+}
+
+.raw-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  resize: vertical;
+}
+
 .md-overlay {
   position: fixed;
   z-index: 20;

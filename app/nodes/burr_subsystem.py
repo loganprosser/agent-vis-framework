@@ -81,6 +81,7 @@ class BurrSubsystemNode(BaseSubsystemNode):
     def _execute_sync(self, context: NodeContext, tracker: _ExecutionTracker) -> NodeResult:
         factory = self._load_factory()
         factory_inputs = self.map_inputs(context.state, self.burr_config.input_map)
+        self._inject_provider_kwargs(factory_inputs)
 
         try:
             candidate = factory(**factory_inputs)
@@ -159,6 +160,19 @@ class BurrSubsystemNode(BaseSubsystemNode):
                 f"'{app_module}.{app_factory}' is not callable."
             )
         return factory
+
+    def _inject_provider_kwargs(self, factory_inputs: dict[str, Any]) -> None:
+        """Forward model provider details to the Burr factory so it uses the
+        same model configured in the workflow YAML instead of env vars."""
+        from app.models.ollama_provider import OllamaModelProvider
+
+        provider = self.model_provider
+        if isinstance(provider, OllamaModelProvider):
+            factory_inputs.setdefault("ollama_model", self.config.model or provider.default_model)
+            factory_inputs.setdefault(
+                "ollama_base_url",
+                provider.config.get("base_url") or "http://127.0.0.1:11434",
+            )
 
     def _run_application(self, application: Any) -> Any:
         halt_after = self.burr_config.halt_after

@@ -1,0 +1,154 @@
+name: ollama_iterative_code_review
+version: 0.1.0
+description: >
+  Three-node workflow that analyzes a programming problem, iteratively drafts
+  and critiques a code solution via a Burr subsystem, then presents a polished
+  final report. Designed for a local Ollama model.
+entrypoint: analyze_problem
+
+nodes:
+  - id: analyze_problem
+    type: problem_analyzer
+    provider: ollama_local
+    model: ~
+    system_prompt_file: workflows/ollama_iterative_code_review/nodes/problem_analyzer.md
+    input_keys:
+      - problem
+    output_keys:
+      - problem_spec
+      - raw_problem
+    retry_policy:
+      max_attempts: 2
+      backoff_seconds: 2
+    human_approval: false
+    config:
+      ui:
+        x: 100
+        y: 220
+
+  - id: iterative_solve
+    type: burr_subsystem
+    provider: ollama_local
+    model: ~
+    input_keys:
+      - analyze_problem
+    output_keys:
+      - final_solution
+      - final_score
+      - iterations_used
+      - accepted
+    retry_policy:
+      max_attempts: 1
+      backoff_seconds: 0
+    human_approval: false
+    config:
+      app_module: app.subsystems.iterative_code_reviewer
+      app_factory: build_iterative_code_reviewer
+      input_map:
+        problem_spec: node_outputs.analyze_problem.problem_spec
+      output_map:
+        final_solution: final_solution
+        final_score: final_score
+        iterations_used: iterations_used
+        accepted: accepted
+      halt_after:
+        - finalize_solution
+      timeout_seconds: 600
+      fail_on_error: true
+      topology:
+        entrypoint: draft_solution
+        actions:
+          - id: draft_solution
+            label: Draft Solution
+            kind: agent
+            description: Write or revise the code solution, incorporating prior critique.
+            reads:
+              - problem
+              - critique
+              - iteration
+              - max_iterations
+            writes:
+              - solution
+              - iteration
+              - status
+          - id: critique_solution
+            label: Critique Solution
+            kind: agent
+            description: Review the solution for correctness and assign a quality score 0-10.
+            reads:
+              - problem
+              - solution
+            writes:
+              - critique
+              - quality_score
+              - status
+          - id: evaluate_quality
+            label: Evaluate Quality
+            kind: router
+            description: Route to refine if below threshold, finalize if accepted or maxed out.
+            reads:
+              - quality_score
+              - iteration
+              - max_iterations
+            writes:
+              - status
+          - id: finalize_solution
+            label: Finalize Solution
+            kind: agent
+            description: Package the approved solution with score and iteration metadata.
+            reads:
+              - solution
+              - critique
+              - quality_score
+              - iteration
+            writes:
+              - final_solution
+              - final_score
+              - iterations_used
+              - accepted
+        transitions:
+          - source: draft_solution
+            target: critique_solution
+            condition: default
+          - source: critique_solution
+            target: evaluate_quality
+            condition: default
+          - source: evaluate_quality
+            target: draft_solution
+            condition: status=refining
+          - source: evaluate_quality
+            target: finalize_solution
+            condition: status=done
+      ui:
+        x: 420
+        y: 220
+
+  - id: present_solution
+    type: solution_presenter
+    provider: ollama_local
+    model: ~
+    system_prompt_file: workflows/ollama_iterative_code_review/nodes/solution_presenter.md
+    input_keys:
+      - iterative_solve
+    output_keys:
+      - final_report
+      - solution
+      - quality_score
+      - iterations
+      - accepted
+    retry_policy:
+      max_attempts: 2
+      backoff_seconds: 2
+    human_approval: false
+    config:
+      ui:
+        x: 740
+        y: 220
+
+edges:
+  - source: analyze_problem
+    target: iterative_solve
+    label: problem_spec
+  - source: iterative_solve
+    target: present_solution
+    label: final_solution

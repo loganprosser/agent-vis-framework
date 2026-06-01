@@ -8,6 +8,8 @@ from app.core.runtime_events import RuntimeEventStore
 from app.core.state import WorkflowState
 from app.nodes.burr_subsystem import BurrSubsystemNode
 from app.nodes.constraint_builder import ConstraintBuilderNode
+from app.nodes.problem_analyzer import ProblemAnalyzerNode
+from app.nodes.solution_presenter import SolutionPresenterNode
 from app.nodes.doc_reader import DocReaderNode
 from app.nodes.domain_generator import DomainGeneratorNode
 from app.nodes.mcp_call import McpCallNode
@@ -44,6 +46,8 @@ def default_node_registry() -> NodeRegistry:
     registry.register("test_runner", TestRunnerNode)
     registry.register("report_generator", ReportGeneratorNode)
     registry.register("requirements_report", RequirementsReportNode)
+    registry.register("problem_analyzer", ProblemAnalyzerNode)
+    registry.register("solution_presenter", SolutionPresenterNode)
     return registry
 
 
