@@ -51,6 +51,10 @@ export type WorkflowNode = {
   retry_policy: { max_attempts: number; backoff_seconds: number };
   human_approval: boolean;
   config: Record<string, unknown> & { ui?: { x?: number; y?: number } };
+  _resolved?: {
+    provider?: string | null;
+    model?: string | null;
+  };
   subsystem?: boolean;
   subsystem_metadata?: {
     runtime: string;

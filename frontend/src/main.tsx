@@ -56,6 +56,36 @@ const terminalRunStatuses = new Set(["completed", "failed"]);
 const csv = (value: string) => value.split(",").map((item) => item.trim()).filter(Boolean);
 const csvValue = (value?: string[]) => (value ?? []).join(", ");
 const slugify = (value: string) => value.trim().replace(/[^a-zA-Z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "node";
+const panelWidthStorageKey = "agentic-workflow-editor-panel-widths";
+const defaultPanelWidths = { left: 320, right: 440 };
+const minPanelWidths = { left: 240, right: 300 };
+const minCanvasWidth = 360;
+const panelResizerWidth = 8;
+type PanelSide = keyof typeof defaultPanelWidths;
+type PanelWidths = typeof defaultPanelWidths;
+
+const clamp = (value: number, minimum: number, maximum: number) => Math.min(Math.max(value, minimum), maximum);
+
+function fitPanelWidths(widths: PanelWidths, shellWidth: number): PanelWidths {
+  const maxCombinedWidth = shellWidth - minCanvasWidth - panelResizerWidth * 2;
+  if (maxCombinedWidth < minPanelWidths.left + minPanelWidths.right) return widths;
+  const left = clamp(widths.left, minPanelWidths.left, maxCombinedWidth - minPanelWidths.right);
+  const right = clamp(widths.right, minPanelWidths.right, maxCombinedWidth - left);
+  return { left, right };
+}
+
+function storedPanelWidths(): PanelWidths {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(panelWidthStorageKey) ?? "") as Partial<PanelWidths>;
+    if (typeof parsed.left === "number" && typeof parsed.right === "number") {
+      return fitPanelWidths({ left: parsed.left, right: parsed.right }, window.innerWidth);
+    }
+  } catch {
+    // Use the defaults when local storage is empty or malformed.
+  }
+  return fitPanelWidths(defaultPanelWidths, window.innerWidth);
+}
+
 const uniqueId = (prefix: string, ids: string[]) => {
   let index = 1;
   while (ids.includes(`${prefix}_${index}`)) index += 1;
@@ -263,6 +293,7 @@ function fromFlow(workflow: Workflow, nodes: Node[], edges: Edge[]): Workflow {
     ...workflow,
     nodes: workflow.nodes.map((node) => {
       const {
+        _resolved: _resolvedModel,
         resolved_system_prompt: _resolvedSystemPrompt,
         subsystem: _subsystem,
         subsystem_metadata: _subsystemMetadata,
@@ -927,6 +958,36 @@ function RunInputPanel(props: {
   );
 }
 
+function PanelResizer(props: {
+  side: PanelSide;
+  width: number;
+  startResize: (side: PanelSide, event: React.PointerEvent<HTMLDivElement>) => void;
+  nudge: (side: PanelSide, delta: number) => void;
+  reset: (side: PanelSide) => void;
+}) {
+  const label = props.side === "left" ? "Resize workflow panel" : "Resize inspector panel";
+  return (
+    <div
+      className={`panel-resizer panel-resizer-${props.side}`}
+      role="separator"
+      aria-label={label}
+      aria-orientation="vertical"
+      aria-valuenow={props.width}
+      tabIndex={0}
+      title={`${label}. Drag or use arrow keys. Double-click to reset.`}
+      onPointerDown={(event) => props.startResize(props.side, event)}
+      onDoubleClick={() => props.reset(props.side)}
+      onKeyDown={(event) => {
+        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+        event.preventDefault();
+        props.nudge(props.side, event.key === "ArrowRight" ? 24 : -24);
+      }}
+    >
+      <span className="panel-resizer-grip" />
+    </div>
+  );
+}
+
 function App() {
   const [workflowNames, setWorkflowNames] = useState<string[]>([]);
   const [catalog, setCatalog] = useState<Catalog>(emptyCatalog);
@@ -939,7 +1000,56 @@ function App() {
   const [runEvents, setRunEvents] = useState<RunEvent[]>([]);
   const [promptTarget, setPromptTarget] = useState<PromptTarget | null>(null);
   const [runInput, setRunInput] = useState('{\n  "inputs": {}\n}');
+  const [panelWidths, setPanelWidths] = useState(storedPanelWidths);
   const runtimeByNode = useMemo(() => deriveRuntimeByNode(workflow, runEvents), [workflow, runEvents]);
+
+  useEffect(() => {
+    window.localStorage.setItem(panelWidthStorageKey, JSON.stringify(panelWidths));
+  }, [panelWidths]);
+
+  useEffect(() => {
+    const fitPanelsToWindow = () => setPanelWidths((current) => fitPanelWidths(current, window.innerWidth));
+    window.addEventListener("resize", fitPanelsToWindow);
+    return () => window.removeEventListener("resize", fitPanelsToWindow);
+  }, []);
+
+  const startPanelResize = useCallback((side: PanelSide, event: React.PointerEvent<HTMLDivElement>) => {
+    if (window.matchMedia("(max-width: 1060px)").matches) return;
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidths = panelWidths;
+    const shellWidth = event.currentTarget.parentElement?.getBoundingClientRect().width ?? window.innerWidth;
+    document.body.classList.add("panel-resizing");
+
+    const resize = (pointerEvent: PointerEvent) => {
+      const delta = pointerEvent.clientX - startX;
+      setPanelWidths(fitPanelWidths({
+        ...startWidths,
+        [side]: side === "left" ? startWidths.left + delta : startWidths.right - delta,
+      }, shellWidth));
+    };
+    const stopResize = () => {
+      document.body.classList.remove("panel-resizing");
+      window.removeEventListener("pointermove", resize);
+      window.removeEventListener("pointerup", stopResize);
+      window.removeEventListener("pointercancel", stopResize);
+    };
+
+    window.addEventListener("pointermove", resize);
+    window.addEventListener("pointerup", stopResize);
+    window.addEventListener("pointercancel", stopResize);
+  }, [panelWidths]);
+
+  const nudgePanel = (side: PanelSide, delta: number) => {
+    setPanelWidths((current) => fitPanelWidths({
+      ...current,
+      [side]: side === "left" ? current.left + delta : current.right - delta,
+    }, window.innerWidth));
+  };
+
+  const resetPanel = (side: PanelSide) => {
+    setPanelWidths((current) => fitPanelWidths({ ...current, [side]: defaultPanelWidths[side] }, window.innerWidth));
+  };
 
   const loadWorkflow = useCallback(async (name: string) => {
     try {
@@ -1179,64 +1289,130 @@ function App() {
 
   return (
     <>
-    <main className="app-shell">
-      <aside className="left-panel">
-        <div>
+    <main
+      className="app-shell"
+      style={{
+        "--left-panel-width": `${panelWidths.left}px`,
+        "--right-panel-width": `${panelWidths.right}px`,
+      } as React.CSSProperties}
+    >
+      <header className="app-topbar">
+        <div className="brand-mark" aria-hidden="true">WF</div>
+        <div className="app-brand">
           <span className="eyebrow">Workflow Studio</span>
-          <h1>Agentic Editor</h1>
-          <p className="status">{status}</p>
+          <div className="app-title-row">
+            <h1>Agentic Editor</h1>
+            {workflow && <span className="workspace-pill">{workflow.nodes.length} node{workflow.nodes.length === 1 ? "" : "s"}</span>}
+          </div>
         </div>
-        <label className="field">
-          <span>Workflow</span>
-          <select value={workflow?.name ?? ""} onChange={(event) => loadWorkflow(event.target.value)}>
-            {workflowNames.map((name) => <option key={name}>{name}</option>)}
-          </select>
-        </label>
-        <div className="button-row">
-          <button className="primary" onClick={save}>Save</button>
-          <button onClick={run}>Run</button>
+        <p className="topbar-status" role="status">
+          <span className="status-dot" />
+          <span>{status}</span>
+        </p>
+        <div className="topbar-actions">
+          <button className="primary" onClick={save}>Save Workflow</button>
+          <button className="run-button" onClick={run}>Run Workflow</button>
           <button onClick={() => validate().then(() => setStatus("Workflow is valid")).catch((error) => setStatus(`Validation failed: ${error.message}`))}>Validate</button>
           <button onClick={newDraft}>New Draft</button>
         </div>
-        {workflow && <WorkflowSettings workflow={workflow} update={(patch) => setWorkflow((current) => current ? { ...current, ...patch } : current)} />}
-        <div className="palette">
-          <h2>Add Nodes</h2>
-          {catalog.node_types.map((nodeType) => (
-            <button className={nodeType === "burr_subsystem" ? "subsystem-add" : ""} key={nodeType} onClick={() => addNode(nodeType)}>
-              <strong>{nodeType === "burr_subsystem" ? "SUB" : "+"}</strong><span>{nodeType}</span>
-            </button>
-          ))}
-        </div>
-        <div className="node-list">
-          <h2>Workflow Nodes</h2>
-          {workflow?.nodes.map((node) => (
-            <button className={node.id === selectedNodeId ? "selected" : ""} key={node.id} onClick={() => setSelectedNodeId(node.id)}>
-              <span>{node.type === "burr_subsystem" ? "SUB" : "NODE"}</span>
-              <strong>{node.id}</strong>
-              <small>{node.type}</small>
-            </button>
-          ))}
-        </div>
+      </header>
+      <aside className="left-panel">
+        <section className="sidebar-section workflow-picker">
+          <div className="sidebar-heading">
+            <div>
+              <span className="eyebrow">Workspace</span>
+              <h2>Workflow Library</h2>
+            </div>
+            <span className="count-badge">{workflowNames.length}</span>
+          </div>
+          <label className="field">
+            <span>Active workflow</span>
+            <select value={workflow?.name ?? ""} onChange={(event) => loadWorkflow(event.target.value)}>
+              {workflowNames.map((name) => <option key={name}>{name}</option>)}
+            </select>
+          </label>
+        </section>
         {workflow && (
-          <RunInputPanel
-            key={workflow.name}
-            workflow={workflow}
-            value={runInput}
-            onChange={setRunInput}
-          />
+          <CollapsibleSection title="Workflow Details">
+            <WorkflowSettings workflow={workflow} update={(patch) => setWorkflow((current) => current ? { ...current, ...patch } : current)} />
+          </CollapsibleSection>
+        )}
+        <section className="sidebar-section palette">
+          <div className="sidebar-heading">
+            <div>
+              <span className="eyebrow">Build</span>
+              <h2>Add Nodes</h2>
+            </div>
+            <span className="count-badge">{catalog.node_types.length}</span>
+          </div>
+          <p className="section-description">Add a node, then connect it on the canvas.</p>
+          <div className="palette-list">
+            {catalog.node_types.map((nodeType) => (
+              <button className={nodeType === "burr_subsystem" ? "subsystem-add" : ""} key={nodeType} onClick={() => addNode(nodeType)}>
+                <strong>{nodeType === "burr_subsystem" ? "SUB" : "+"}</strong><span>{nodeType}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+        <section className="sidebar-section node-list">
+          <div className="sidebar-heading">
+            <div>
+              <span className="eyebrow">Navigate</span>
+              <h2>Workflow Nodes</h2>
+            </div>
+            <span className="count-badge">{workflow?.nodes.length ?? 0}</span>
+          </div>
+          <div className="node-list-items">
+            {workflow?.nodes.map((node) => (
+              <button className={node.id === selectedNodeId ? "selected" : ""} key={node.id} onClick={() => setSelectedNodeId(node.id)}>
+                <span>{node.type === "burr_subsystem" ? "SUB" : "NODE"}</span>
+                <strong>{node.id}</strong>
+                <small>{node.type}</small>
+              </button>
+            ))}
+          </div>
+        </section>
+        {workflow && (
+          <CollapsibleSection title="Run Workflow" defaultOpen={true}>
+            <RunInputPanel
+              key={workflow.name}
+              workflow={workflow}
+              value={runInput}
+              onChange={setRunInput}
+            />
+          </CollapsibleSection>
         )}
         {runRecord && (
           <div className="run-summary">
-            <h2>Latest Run</h2>
-            <strong>{runRecord.status}</strong>
+            <div className="section-heading">
+              <h2>Latest Run</h2>
+              <span className={`runtime-chip runtime-chip-${runRecord.status}`}>{runRecord.status}</span>
+            </div>
             <code>{runRecord.run_id}</code>
             {runRecord.error && <pre>{runRecord.error}</pre>}
           </div>
         )}
-        <RuntimeTimeline events={runEvents} runId={runRecord?.run_id} />
-        {currentWorkflow && <EdgeEditor workflow={currentWorkflow} update={(nextWorkflow) => replaceWorkflow(nextWorkflow, selectedNodeId)} />}
-        {currentWorkflow && <WorkflowJsonEditor workflow={currentWorkflow} load={(nextWorkflow) => replaceWorkflow(nextWorkflow, nextWorkflow.nodes[0]?.id ?? null)} setStatus={setStatus} />}
+        <CollapsibleSection title="Run History" badge={runEvents.length ? String(runEvents.length) : undefined}>
+          <RuntimeTimeline events={runEvents} runId={runRecord?.run_id} />
+        </CollapsibleSection>
+        {currentWorkflow && (
+          <CollapsibleSection title="Connections" badge={currentWorkflow.edges.length ? String(currentWorkflow.edges.length) : undefined}>
+            <EdgeEditor workflow={currentWorkflow} update={(nextWorkflow) => replaceWorkflow(nextWorkflow, selectedNodeId)} />
+          </CollapsibleSection>
+        )}
+        {currentWorkflow && (
+          <CollapsibleSection title="Advanced JSON">
+            <WorkflowJsonEditor workflow={currentWorkflow} load={(nextWorkflow) => replaceWorkflow(nextWorkflow, nextWorkflow.nodes[0]?.id ?? null)} setStatus={setStatus} />
+          </CollapsibleSection>
+        )}
       </aside>
+      <PanelResizer
+        side="left"
+        width={panelWidths.left}
+        startResize={startPanelResize}
+        nudge={nudgePanel}
+        reset={resetPanel}
+      />
       <section className="canvas-panel">
         <div className="canvas-heading">
           <div>
@@ -1259,10 +1435,20 @@ function App() {
           <MiniMap />
         </ReactFlow>
       </section>
+      <PanelResizer
+        side="right"
+        width={panelWidths.right}
+        startResize={startPanelResize}
+        nudge={nudgePanel}
+        reset={resetPanel}
+      />
       <aside className="right-panel">
         <div className="inspector-heading">
-          <span className="eyebrow">Inspector</span>
-          <h2>{selectedNode?.id ?? "Select a node"}</h2>
+          <div>
+            <span className="eyebrow">Inspector</span>
+            <h2>{selectedNode?.id ?? "Select a node"}</h2>
+          </div>
+          {selectedNode && <span className="node-type-badge">{selectedNode.type}</span>}
         </div>
         {!selectedNode && <p>Select a node to edit its configuration.</p>}
         {selectedNode && workflow && (

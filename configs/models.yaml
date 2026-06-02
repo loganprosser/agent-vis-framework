@@ -23,7 +23,7 @@ providers:
     temperature: 0
 - id: ollama_local
   type: ollama
-  default_model: ibm/granite4.1:8b-q8_0
+  default_model: gemma4:e4b
   config:
     base_url: http://127.0.0.1:11434
     context_length: 16384
