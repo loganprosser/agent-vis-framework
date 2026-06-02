@@ -3,11 +3,13 @@ import { createRoot } from "react-dom/client";
 import ReactFlow, {
   Background,
   Connection,
+  ConnectionLineType,
   Controls,
   Edge,
   MarkerType,
   MiniMap,
   Node,
+  Position,
   ReactFlowProvider,
   addEdge,
   applyEdgeChanges,
@@ -56,15 +58,32 @@ const terminalRunStatuses = new Set(["completed", "failed"]);
 const csv = (value: string) => value.split(",").map((item) => item.trim()).filter(Boolean);
 const csvValue = (value?: string[]) => (value ?? []).join(", ");
 const slugify = (value: string) => value.trim().replace(/[^a-zA-Z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "node";
+const themeStorageKey = "agentic-workflow-editor-theme";
 const panelWidthStorageKey = "agentic-workflow-editor-panel-widths";
 const defaultPanelWidths = { left: 320, right: 440 };
 const minPanelWidths = { left: 240, right: 300 };
 const minCanvasWidth = 360;
 const panelResizerWidth = 8;
+type ColorTheme = "dark" | "light";
 type PanelSide = keyof typeof defaultPanelWidths;
 type PanelWidths = typeof defaultPanelWidths;
+const flowEdgeColor = "#7cb7f5";
+const flowEdgeOptions = {
+  type: "smoothstep",
+  style: { stroke: flowEdgeColor, strokeWidth: 2 },
+  markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18, color: flowEdgeColor },
+  labelStyle: { fill: "#dbeafe", fontSize: 11, fontWeight: 700 },
+  labelBgStyle: { fill: "#111925", fillOpacity: .96, stroke: "#38506d", strokeWidth: 1 },
+  labelBgPadding: [7, 4] as [number, number],
+  labelBgBorderRadius: 5,
+  pathOptions: { borderRadius: 14, offset: 28 },
+};
 
 const clamp = (value: number, minimum: number, maximum: number) => Math.min(Math.max(value, minimum), maximum);
+
+function storedTheme(): ColorTheme {
+  return window.localStorage.getItem(themeStorageKey) === "light" ? "light" : "dark";
+}
 
 function fitPanelWidths(widths: PanelWidths, shellWidth: number): PanelWidths {
   const maxCombinedWidth = shellWidth - minCanvasWidth - panelResizerWidth * 2;
@@ -274,16 +293,18 @@ function toFlowNodes(workflow: Workflow, runtimeByNode: Record<string, NodeRunti
       `runtime-${visibleNodeStatus(node, runtimeByNode[node.id])}`,
     ].filter(Boolean).join(" "),
     type: "default",
+    sourcePosition: Position.Right,
+    targetPosition: Position.Left,
   }));
 }
 
 function toFlowEdges(workflow: Workflow): Edge[] {
   return workflow.edges.map((edge, index) => ({
+    ...flowEdgeOptions,
     id: `${edge.source}->${edge.target}-${index}`,
     source: edge.source,
     target: edge.target,
-    label: edge.label || `${edge.source} -> ${edge.target}`,
-    markerEnd: { type: MarkerType.ArrowClosed },
+    label: edge.label || undefined,
   }));
 }
 
@@ -1000,8 +1021,14 @@ function App() {
   const [runEvents, setRunEvents] = useState<RunEvent[]>([]);
   const [promptTarget, setPromptTarget] = useState<PromptTarget | null>(null);
   const [runInput, setRunInput] = useState('{\n  "inputs": {}\n}');
+  const [theme, setTheme] = useState<ColorTheme>(storedTheme);
   const [panelWidths, setPanelWidths] = useState(storedPanelWidths);
   const runtimeByNode = useMemo(() => deriveRuntimeByNode(workflow, runEvents), [workflow, runEvents]);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    window.localStorage.setItem(themeStorageKey, theme);
+  }, [theme]);
 
   useEffect(() => {
     window.localStorage.setItem(panelWidthStorageKey, JSON.stringify(panelWidths));
@@ -1243,7 +1270,7 @@ function App() {
   };
 
   const onConnect = useCallback(
-    (connection: Connection) => setEdges((current) => addEdge({ ...connection, markerEnd: { type: MarkerType.ArrowClosed } }, current)),
+    (connection: Connection) => setEdges((current) => addEdge({ ...flowEdgeOptions, ...connection }, current)),
     [],
   );
 
@@ -1310,6 +1337,13 @@ function App() {
           <span>{status}</span>
         </p>
         <div className="topbar-actions">
+          <button
+            className="theme-toggle"
+            aria-pressed={theme === "light"}
+            onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}
+          >
+            {theme === "dark" ? "Light Mode" : "Dark Mode"}
+          </button>
           <button className="primary" onClick={save}>Save Workflow</button>
           <button className="run-button" onClick={run}>Run Workflow</button>
           <button onClick={() => validate().then(() => setStatus("Workflow is valid")).catch((error) => setStatus(`Validation failed: ${error.message}`))}>Validate</button>
@@ -1428,9 +1462,12 @@ function App() {
           onEdgesChange={(changes) => setEdges((current) => applyEdgeChanges(changes, current))}
           onConnect={onConnect}
           onNodeClick={(_event, node) => setSelectedNodeId(node.id)}
+          connectionLineStyle={{ stroke: flowEdgeColor, strokeWidth: 2 }}
+          connectionLineType={ConnectionLineType.SmoothStep}
+          elevateEdgesOnSelect
           fitView
         >
-          <Background />
+          <Background color={theme === "light" ? "#cbd5e1" : "#26364d"} />
           <Controls />
           <MiniMap />
         </ReactFlow>

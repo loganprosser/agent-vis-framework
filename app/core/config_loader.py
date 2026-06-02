@@ -26,6 +26,18 @@ class ConfigLoader:
             return []
         return sorted(path.stem for path in self.workflow_dir.glob("*.yaml"))
 
+    def list_library_workflows(self) -> list[str]:
+        path = self.config_dir / "workflow_library.yaml"
+        if not path.exists():
+            return self.list_workflows()
+        with path.open("r", encoding="utf-8") as config_file:
+            raw: Any = yaml.safe_load(config_file) or {}
+        visible_workflows = raw.get("visible_workflows", [])
+        if not isinstance(visible_workflows, list) or any(not isinstance(name, str) for name in visible_workflows):
+            raise ValueError("workflow_library.yaml visible_workflows must be a list of workflow names.")
+        available_workflows = set(self.list_workflows())
+        return [name for name in visible_workflows if name in available_workflows]
+
     def load_workflow(self, workflow_name: str) -> WorkflowConfig:
         return self._load_yaml_model(
             self._workflow_path(workflow_name),

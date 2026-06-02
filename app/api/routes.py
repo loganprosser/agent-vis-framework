@@ -101,7 +101,7 @@ def create_router(
 
     @router.get("/workflows")
     async def list_workflows() -> dict[str, list[str]]:
-        return {"workflows": config_loader.list_workflows()}
+        return {"workflows": config_loader.list_library_workflows()}
 
     @router.get("/workflows/{workflow_name}")
     async def get_workflow(workflow_name: str) -> dict[str, Any]:

@@ -15,6 +15,14 @@ def test_loads_example_workflow() -> None:
     assert workflow.edges[-1].target == "report_generator"
 
 
+def test_library_workflows_can_hide_examples_without_removing_them() -> None:
+    loader = ConfigLoader()
+
+    assert loader.list_library_workflows() == ["ollama_iterative_code_review"]
+    assert "starter_three_node" in loader.list_workflows()
+    assert loader.load_workflow("starter_three_node").name == "starter_three_node"
+
+
 def test_prompt_files_support_nested_directories(tmp_path: Path) -> None:
     loader = ConfigLoader(tmp_path)
 

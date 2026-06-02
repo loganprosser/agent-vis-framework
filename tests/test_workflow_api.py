@@ -12,6 +12,13 @@ def build_client() -> TestClient:
     return TestClient(app)
 
 
+def test_workflow_library_only_lists_visible_workflows() -> None:
+    client = build_client()
+
+    assert client.get("/workflows").json() == {"workflows": ["ollama_iterative_code_review"]}
+    assert client.get("/workflows/starter_three_node").status_code == 200
+
+
 def test_workflow_export_marks_burr_nodes_as_subsystems() -> None:
     response = build_client().get("/workflows/mixed_burr_requirements")
 

@@ -78,6 +78,10 @@ button.run-button {
   color: #d1fae5;
 }
 
+button.theme-toggle {
+  border-color: rgba(147, 164, 186, .62);
+}
+
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
@@ -530,8 +534,15 @@ body.panel-resizing {
 
 .flow-node {
   display: grid;
-  gap: 3px;
-  min-width: 190px;
+  gap: 4px;
+  min-width: 0;
+  text-align: left;
+}
+
+.flow-node strong,
+.flow-node span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .flow-node span {
@@ -582,11 +593,35 @@ body.panel-resizing {
 }
 
 .react-flow__node {
+  width: 230px;
   border-radius: 8px;
   border: 1px solid #485366;
   background: #171e2a;
+  padding: 12px 14px;
   color: #eef2f7;
   box-shadow: 0 18px 38px rgba(0, 0, 0, .22);
+}
+
+.react-flow__handle {
+  width: 11px;
+  height: 11px;
+  border: 2px solid #dbeafe;
+  background: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, .2);
+}
+
+.react-flow__handle-left {
+  left: -6px;
+}
+
+.react-flow__handle-right {
+  right: -6px;
+}
+
+.react-flow__handle.connectionindicator:hover {
+  border-color: #fff;
+  background: #60a5fa;
+  box-shadow: 0 0 0 5px rgba(96, 165, 250, .22);
 }
 
 .react-flow__node.subsystem-node {
@@ -614,12 +649,29 @@ body.panel-resizing {
   box-shadow: 0 0 0 3px rgba(248, 113, 113, .18), 0 18px 38px rgba(0, 0, 0, .22);
 }
 
+.react-flow__edge-path {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .55));
+}
+
+.react-flow__edge.selected .react-flow__edge-path,
+.react-flow__edge:focus-visible .react-flow__edge-path {
+  stroke: #bfdbfe !important;
+  stroke-width: 3;
+}
+
 .react-flow__edge-textbg {
-  fill: #1f2937;
+  fill: #111925;
+  stroke: #38506d;
+  stroke-width: 1;
 }
 
 .react-flow__edge-text {
-  fill: #eef2f7;
+  fill: #dbeafe;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .01em;
 }
 
 .inspector-heading {
@@ -1138,6 +1190,253 @@ body.panel-resizing {
   color: #eef2f7;
   font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
   white-space: pre-wrap;
+}
+
+.react-flow__controls-button {
+  border-bottom-color: var(--border);
+  background: var(--panel-raised);
+  fill: var(--text);
+}
+
+.react-flow__controls-button:hover {
+  background: var(--panel-soft);
+}
+
+.react-flow__minimap {
+  background: var(--panel-raised) !important;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  background: #f4f7fb;
+  color: #172033;
+  --bg: #f4f7fb;
+  --panel: #ffffff;
+  --panel-raised: #f7f9fc;
+  --panel-soft: rgba(226, 232, 240, .82);
+  --border: #cbd5e1;
+  --border-soft: rgba(148, 163, 184, .62);
+  --text: #172033;
+  --muted: #64748b;
+  --muted-strong: #475569;
+  --blue: #2563eb;
+  --blue-deep: #1d4ed8;
+  --violet: #7c3aed;
+}
+
+:root[data-theme="light"] button:hover {
+  border-color: #94a3b8;
+  background: #eef2f7;
+}
+
+:root[data-theme="light"] button.primary,
+:root[data-theme="light"] button.primary:hover {
+  border-color: #1d4ed8;
+  background: #2563eb;
+  color: #fff;
+}
+
+:root[data-theme="light"] button.run-button {
+  border-color: rgba(5, 150, 105, .56);
+  background: rgba(16, 185, 129, .12);
+  color: #047857;
+}
+
+:root[data-theme="light"] button.danger {
+  color: #b91c1c;
+}
+
+:root[data-theme="light"] .app-topbar {
+  background: rgba(255, 255, 255, .96);
+  box-shadow: 0 12px 32px rgba(100, 116, 139, .12);
+}
+
+:root[data-theme="light"] .workspace-pill,
+:root[data-theme="light"] .count-badge,
+:root[data-theme="light"] .node-type-badge {
+  background: rgba(37, 99, 235, .1);
+  color: #1d4ed8;
+}
+
+:root[data-theme="light"] .left-panel,
+:root[data-theme="light"] .right-panel,
+:root[data-theme="light"] .palette-list,
+:root[data-theme="light"] .node-list-items {
+  scrollbar-color: #94a3b8 transparent;
+}
+
+:root[data-theme="light"] .panel-resizer {
+  border-inline-color: rgba(148, 163, 184, .7);
+  background: rgba(226, 232, 240, .82);
+}
+
+:root[data-theme="light"] .panel-resizer-grip {
+  background: #94a3b8;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .7);
+}
+
+:root[data-theme="light"] .choice-chip,
+:root[data-theme="light"] .edge-editor,
+:root[data-theme="light"] .action-editor,
+:root[data-theme="light"] .runtime-panel {
+  border-color: #cbd5e1;
+  color: #334155;
+}
+
+:root[data-theme="light"] .choice-chip small,
+:root[data-theme="light"] .node-list button small,
+:root[data-theme="light"] .canvas-heading span:last-child,
+:root[data-theme="light"] .flow-node span,
+:root[data-theme="light"] .summary-grid dt,
+:root[data-theme="light"] .section-heading p,
+:root[data-theme="light"] .internal-action span,
+:root[data-theme="light"] .internal-action em,
+:root[data-theme="light"] .tag-line em,
+:root[data-theme="light"] .timeline-panel .section-heading span,
+:root[data-theme="light"] .timeline-panel p,
+:root[data-theme="light"] .action-event-list > span,
+:root[data-theme="light"] .subtle,
+:root[data-theme="light"] .timeline-list time,
+:root[data-theme="light"] .timeline-list span,
+:root[data-theme="light"] .action-sequence span,
+:root[data-theme="light"] .action-event-list span,
+:root[data-theme="light"] .transition-list p,
+:root[data-theme="light"] .artifact-list span,
+:root[data-theme="light"] .empty-topology p,
+:root[data-theme="light"] .node-output-viewer .subtle,
+:root[data-theme="light"] .md-topbar p {
+  color: #64748b;
+}
+
+:root[data-theme="light"] .sidebar-section,
+:root[data-theme="light"] .collapsible-section {
+  background: rgba(248, 250, 252, .82);
+}
+
+:root[data-theme="light"] .collapsible-header {
+  background: rgba(226, 232, 240, .78);
+}
+
+:root[data-theme="light"] .collapsible-header:hover {
+  background: rgba(203, 213, 225, .78);
+}
+
+:root[data-theme="light"] .collapsible-header strong {
+  color: #172033;
+}
+
+:root[data-theme="light"] .palette .subsystem-add,
+:root[data-theme="light"] .internal-action.selected {
+  border-color: rgba(124, 58, 237, .62);
+  background: rgba(124, 58, 237, .1);
+}
+
+:root[data-theme="light"] .palette .subsystem-add strong,
+:root[data-theme="light"] .node-list button > span,
+:root[data-theme="light"] .flow-node .subsystem-label,
+:root[data-theme="light"] .internal-action small {
+  color: #6d28d9;
+}
+
+:root[data-theme="light"] .runtime-chip-running {
+  color: #1d4ed8 !important;
+}
+
+:root[data-theme="light"] .runtime-chip-completed {
+  color: #15803d !important;
+}
+
+:root[data-theme="light"] .runtime-chip-failed {
+  color: #b91c1c !important;
+}
+
+:root[data-theme="light"] .flow-node .current-action,
+:root[data-theme="light"] .action-sequence code {
+  color: #6d28d9;
+}
+
+:root[data-theme="light"] .tag-line code,
+:root[data-theme="light"] .collapsible-badge,
+:root[data-theme="light"] .mode-tabs button.active {
+  color: #1d4ed8;
+}
+
+:root[data-theme="light"] .artifact-list a {
+  color: #6d28d9;
+}
+
+:root[data-theme="light"] .canvas-heading {
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 12px 30px rgba(100, 116, 139, .14);
+}
+
+:root[data-theme="light"] .react-flow__node {
+  border-color: #94a3b8;
+  background: #ffffff;
+  color: #172033;
+  box-shadow: 0 12px 28px rgba(100, 116, 139, .18);
+}
+
+:root[data-theme="light"] .react-flow__node.subsystem-node {
+  border-color: #8b5cf6;
+  background: linear-gradient(145deg, #ffffff, rgba(237, 233, 254, .92));
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, .13), 0 12px 28px rgba(100, 116, 139, .18);
+}
+
+:root[data-theme="light"] .react-flow__edge-path {
+  filter: drop-shadow(0 1px 2px rgba(100, 116, 139, .32));
+}
+
+:root[data-theme="light"] .react-flow__edge-textbg {
+  fill: #ffffff !important;
+  stroke: #93b4db !important;
+}
+
+:root[data-theme="light"] .react-flow__edge-text {
+  fill: #1e3a5f !important;
+}
+
+:root[data-theme="light"] .subsystem-banner {
+  border-color: rgba(124, 58, 237, .5);
+  background: linear-gradient(120deg, rgba(237, 233, 254, .96), rgba(245, 243, 255, .82));
+  color: #5b21b6;
+}
+
+:root[data-theme="light"] .subsystem-banner span {
+  color: #7c3aed;
+}
+
+:root[data-theme="light"] .notice {
+  background: rgba(237, 233, 254, .72);
+  color: #475569;
+}
+
+:root[data-theme="light"] .check-field {
+  color: #334155;
+}
+
+:root[data-theme="light"] .internal-canvas,
+:root[data-theme="light"] .action-editor,
+:root[data-theme="light"] .runtime-panel {
+  background: rgba(248, 250, 252, .82);
+}
+
+:root[data-theme="light"] .timeline-payload,
+:root[data-theme="light"] .runtime-panel pre,
+:root[data-theme="light"] .output-pre {
+  background: #eef2f7;
+  color: #334155;
+}
+
+:root[data-theme="light"] .md-overlay {
+  background: #f4f7fb;
+}
+
+:root[data-theme="light"] .md-split textarea,
+:root[data-theme="light"] .md-preview {
+  border-color: #cbd5e1;
+  background: #ffffff;
+  color: #172033;
 }
 
 @media (max-width: 1320px) {
