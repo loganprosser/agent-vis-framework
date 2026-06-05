@@ -7,6 +7,7 @@ from app.core.registry import ModelRegistry, NodeRegistry, ToolRegistry
 from app.core.runtime_events import RuntimeEventStore
 from app.core.state import WorkflowState
 from app.nodes.burr_subsystem import BurrSubsystemNode
+from app.nodes.react_orchestrator import ReactOrchestratorNode
 from app.nodes.constraint_builder import ConstraintBuilderNode
 from app.nodes.problem_analyzer import ProblemAnalyzerNode
 from app.nodes.solution_presenter import SolutionPresenterNode
@@ -31,6 +32,7 @@ from app.tools.base import ObservableTool
 def default_node_registry() -> NodeRegistry:
     registry = NodeRegistry()
     registry.register("burr_subsystem", BurrSubsystemNode)
+    registry.register("react_orchestrator", ReactOrchestratorNode)
     registry.register("doc_reader", DocReaderNode)
     registry.register("source_reader", SourceReaderNode)
     registry.register("variable_extractor", VariableExtractorNode)

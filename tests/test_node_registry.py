@@ -40,6 +40,7 @@ def test_default_registry_contains_existing_node_types() -> None:
         "mcp_discovery",
         "mock_requirements_input",
         "problem_analyzer",
+        "react_orchestrator",
         "report_generator",
         "requirements_report",
         "solution_presenter",

@@ -1,0 +1,40 @@
+name: react_orchestrator_demo
+version: 0.1.0
+description: |
+  Minimal ReAct orchestrator demo. The orchestrator picks from declared
+  tools (none here), declared subagents (one "summarizer"), and MCP-
+  discovered tools (the bundled builtin_demo server) to fulfil the
+  workflow's `objective`.
+entrypoint: orchestrate
+nodes:
+- id: orchestrate
+  type: react_orchestrator
+  model: mock-deterministic
+  provider: mock
+  system_prompt: ''
+  input_keys:
+  - objective
+  output_keys:
+  - answer
+  - iterations
+  tools:
+  - builtin_demo_mcp
+  mcps: []
+  retry_policy:
+    max_attempts: 1
+    backoff_seconds: 0.0
+  human_approval: false
+  config:
+    objective_key: objective
+    max_iterations: 6
+    subagents:
+    - id: summarizer
+      description: Summarises arbitrary text in one sentence.
+      system_prompt: |
+        Summarise the user message in one sentence. No preamble.
+    mcp_discovery:
+    - builtin_demo_mcp
+    ui:
+      x: 280
+      y: 240
+edges: []

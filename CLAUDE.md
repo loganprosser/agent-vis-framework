@@ -98,6 +98,10 @@ See `configs/workflows/branching_burr_requirements.yaml` for a working example.
 
 `BurrSubsystemNode` introspects the factory signature and only injects the kwargs it accepts: `agent_runner`, `prompt_loader`, `preset`, `model_provider`. Add `preset:` and `prompt_dir:` to the node config (relative to `${WORKFLOW_CONFIG_DIR}`) to wire it up. See `docs/burr-kit.md` and `configs/workflows/burr_kit_demo.yaml`.
 
+## ReactOrchestratorNode (`react_orchestrator`)
+
+Pi-coding-style ReAct loop. Picks each turn among **declared tools** (any `Tool` in `tools:`), **declared subagents** (inline `system_prompt` LLM calls), and **MCP-discovered tools** (`mcp_discovery: [<mcp_tool_id>, ...]` — each server's `list_tools` result is merged into the catalog as `<server>.<tool_name>`). Loop format is strict three-line Thought/Action/Action Input turns; emit `Action: final_answer` to terminate. Emits `react_thought`, `react_action`, `react_observation`, `react_final` events. Config knobs: `objective_key`, `max_iterations`, `subagents`, `mcp_discovery`. See `configs/workflows/react_orchestrator_demo.yaml`.
+
 ## McpCallNode
 
 Generic node type (`mcp_call`) for calling a specific MCP tool by name — no custom Python needed. String values wrapped in `{node_id.key}` in `config.arguments` are resolved from prior node outputs.
