@@ -92,6 +92,12 @@ Artifacts: `burr_final_state.json`, `burr_node_metadata.json`, `burr_trace.json`
 
 See `configs/workflows/branching_burr_requirements.yaml` for a working example.
 
+## burr_kit (Burr factory primitives)
+
+`app/burr_kit/` ports the reusable Burr architecture from `burr-combinatorial-testing/atf`: presets, prompt loader, agent runner, subprocess runner, and an example TestForge client. No ATF workflows were copied — these are framework-level helpers for building your own Burr subsystems.
+
+`BurrSubsystemNode` introspects the factory signature and only injects the kwargs it accepts: `agent_runner`, `prompt_loader`, `preset`, `model_provider`. Add `preset:` and `prompt_dir:` to the node config (relative to `${WORKFLOW_CONFIG_DIR}`) to wire it up. See `docs/burr-kit.md` and `configs/workflows/burr_kit_demo.yaml`.
+
 ## McpCallNode
 
 Generic node type (`mcp_call`) for calling a specific MCP tool by name — no custom Python needed. String values wrapped in `{node_id.key}` in `config.arguments` are resolved from prior node outputs.

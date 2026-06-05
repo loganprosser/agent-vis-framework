@@ -1,0 +1,40 @@
+name: burr_kit_demo
+version: 0.1.0
+description: |
+  One-node workflow demonstrating the burr_kit injection contract:
+  the BurrSubsystemNode hands the factory an AgentRunner, a PromptLoader, a
+  PresetConfig, and the workflow's ModelProvider — all auto-wired from the
+  preset + prompt_dir fields below.
+entrypoint: two_step
+nodes:
+- id: two_step
+  type: burr_subsystem
+  model: mock-deterministic
+  provider: mock
+  input_keys:
+  - task
+  output_keys:
+  - plan
+  - answer
+  tools: []
+  mcps: []
+  retry_policy:
+    max_attempts: 1
+    backoff_seconds: 0.0
+  human_approval: false
+  config:
+    app_module: app.subsystems.examples.two_step_agent
+    app_factory: build_two_step_app
+    input_map:
+      task: inputs.task
+    output_map:
+      plan: plan
+      answer: answer
+    halt_after:
+    - act
+    preset: example_strict
+    prompt_dir: prompts/workflows/burr_kit_demo
+    ui:
+      x: 240
+      y: 240
+edges: []

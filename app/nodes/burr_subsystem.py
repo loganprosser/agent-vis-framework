@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
+import os
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from importlib import import_module
+from pathlib import Path
 from typing import Any, Mapping
 
 from app.core.runtime_events import safe_append_event
@@ -162,8 +165,9 @@ class BurrSubsystemNode(BaseSubsystemNode):
         return factory
 
     def _inject_provider_kwargs(self, factory_inputs: dict[str, Any]) -> None:
-        """Forward model provider details to the Burr factory so it uses the
-        same model configured in the workflow YAML instead of env vars."""
+        """Forward model provider details and optional ``burr_kit`` primitives
+        to the Burr factory so workflow YAML controls model + prompts +
+        presets instead of env vars."""
         from app.models.ollama_provider import OllamaModelProvider
 
         provider = self.model_provider
@@ -173,6 +177,75 @@ class BurrSubsystemNode(BaseSubsystemNode):
                 "ollama_base_url",
                 provider.config.get("base_url") or "http://127.0.0.1:11434",
             )
+
+        # Optional burr_kit injection — only pass kwargs the factory actually accepts.
+        try:
+            factory = self._load_factory()
+            params = inspect.signature(factory).parameters
+        except Exception:  # noqa: BLE001 - factory introspection is best-effort.
+            return
+
+        if "model_provider" in params:
+            factory_inputs.setdefault("model_provider", provider)
+
+        prompt_loader = self._build_prompt_loader()
+        if prompt_loader is not None and "prompt_loader" in params:
+            factory_inputs.setdefault("prompt_loader", prompt_loader)
+
+        preset = self._load_preset()
+        if preset is not None and "preset" in params:
+            factory_inputs.setdefault("preset", preset)
+
+        if "agent_runner" in params:
+            from app.burr_kit.agent_runner import AgentRunner
+
+            factory_inputs.setdefault(
+                "agent_runner",
+                AgentRunner(
+                    provider=provider,
+                    prompt_loader=prompt_loader,
+                    model=self.config.model or provider.default_model,
+                ),
+            )
+
+    def _config_dir(self) -> Path:
+        return Path(os.getenv("WORKFLOW_CONFIG_DIR", "configs"))
+
+    def _resolve_under_config(self, path_str: str | None) -> Path | None:
+        if not path_str:
+            return None
+        path = Path(path_str)
+        return path if path.is_absolute() else (self._config_dir() / path)
+
+    def _presets_root(self) -> Path:
+        custom = self.burr_config.presets_root
+        return self._resolve_under_config(custom) or (self._config_dir() / "presets")
+
+    def _build_prompt_loader(self):
+        prompt_dir = self._resolve_under_config(self.burr_config.prompt_dir)
+        preset_dir = None
+        if self.burr_config.preset:
+            candidate = self._presets_root() / self.burr_config.preset
+            if candidate.is_dir():
+                preset_dir = candidate
+        if prompt_dir is None and preset_dir is None:
+            return None
+        from app.burr_kit.prompt_loader import PromptLoader
+
+        return PromptLoader(workflow_dir=prompt_dir, preset_dir=preset_dir)
+
+    def _load_preset(self):
+        name = self.burr_config.preset
+        if not name:
+            return None
+        try:
+            from app.burr_kit.presets import load_preset
+        except Exception:  # noqa: BLE001 - burr_kit is optional.
+            return None
+        try:
+            return load_preset(self._presets_root(), name)
+        except FileNotFoundError:
+            return None
 
     def _run_application(self, application: Any) -> Any:
         halt_after = self.burr_config.halt_after

@@ -1,0 +1,10 @@
+description: |
+  Example preset for app.subsystems.examples.two_step_agent.
+
+  Demonstrates that the burr_kit preset is loaded and merged into the
+  factory call as a plain ``PresetConfig`` — the example app reads
+  ``preset.config["style"]`` to bias the LLM output.
+workflows:
+  - burr_kit_demo
+config:
+  style: "Be terse. Maximum two short sentences."

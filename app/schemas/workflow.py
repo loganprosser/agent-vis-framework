@@ -70,6 +70,13 @@ class BurrSubsystemConfig(BaseModel):
     fail_on_error: bool = True
     topology: BurrTopologyConfig | None = None
     ui: dict[str, Any] | None = None
+    # burr_kit integration: optional preset bundle + prompt directory the
+    # factory can consume via injected ``preset`` / ``prompt_loader`` / ``agent_runner``
+    # kwargs. ``presets_root`` and ``prompt_dir`` are resolved relative to
+    # ``${WORKFLOW_CONFIG_DIR}`` (default ``configs/``) when relative.
+    preset: str | None = None
+    presets_root: str | None = None
+    prompt_dir: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 
