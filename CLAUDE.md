@@ -92,6 +92,17 @@ Artifacts: `burr_final_state.json`, `burr_node_metadata.json`, `burr_trace.json`
 
 See `configs/workflows/branching_burr_requirements.yaml` for a working example.
 
+## Demos
+
+Four runnable demos live under `examples/`, each covered by a deterministic test in `tests/demos/`:
+
+- `combinatorial_calc` — pure-Python; no LLM. First sanity check after a clone.
+- `research_assistant` — M4 ReAct orchestrator (declared MCP tool + inline subagents + MCP discovery).
+- `burr_code_review` — M2 burr_kit injection + M3 Mermaid runtime viz; switch `preset:` between `strict_review` and `friendly_review`.
+- `hybrid_pipeline` — M4 → M2 composition: ReAct feeds a Burr subsystem.
+
+Run any via `python -m examples.run <name> [--provider <id>] [--inputs '<json>'] [--preset <name>]`, or interactively via `./examples/run_demo.sh`. The runner overrides every node's `provider:` to a single id from `configs/models.yaml`, so the same workflow works against mock, ollama_local, litellm_proxy, or rits_default once those are registered with `./configure-model.sh`. See `examples/README.md`.
+
 ## burr_kit (Burr factory primitives)
 
 `app/burr_kit/` ports the reusable Burr architecture from `burr-combinatorial-testing/atf`: presets, prompt loader, agent runner, subprocess runner, and an example TestForge client. No ATF workflows were copied — these are framework-level helpers for building your own Burr subsystems.

@@ -1,0 +1,52 @@
+name: demo_burr_code_review
+version: 0.1.0
+description: |
+  Burr-subsystem demo showing M2 (burr_kit injection) and M3 (Mermaid
+  runtime visualizer). The subsystem walks
+  ``read_target → run_lint → write_review → summarize``, using:
+    - SubprocessRunner for the lint step (preset-controlled command,
+      defaults to a safe echo stub)
+    - AgentRunner + PromptLoader for the LLM-driven steps
+    - Preset to override the lint command and style hints
+
+  Switch ``preset`` between ``strict_review`` and ``friendly_review`` to see
+  the same Burr graph behave very differently. The runtime visualizer in
+  the React inspector will highlight each Burr action as it advances.
+entrypoint: review_subsystem
+nodes:
+- id: review_subsystem
+  type: burr_subsystem
+  provider: mock
+  model: mock-deterministic
+  system_prompt: ''
+  input_keys:
+  - target_path
+  - file_content
+  output_keys:
+  - summary
+  - review
+  - lint_output
+  tools: []
+  mcps: []
+  retry_policy:
+    max_attempts: 1
+    backoff_seconds: 0.0
+  human_approval: false
+  config:
+    app_module: app.subsystems.examples.code_review_burr
+    app_factory: build_code_review_app
+    input_map:
+      target_path: inputs.target_path
+      file_content: inputs.file_content
+    output_map:
+      review: review
+      summary: summary
+      lint_output: lint_output
+    halt_after:
+    - summarize
+    preset: strict_review
+    prompt_dir: prompts/workflows/demo_burr_code_review
+    ui:
+      x: 240
+      y: 240
+edges: []

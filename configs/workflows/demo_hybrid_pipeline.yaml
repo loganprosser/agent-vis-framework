@@ -1,0 +1,78 @@
+name: demo_hybrid_pipeline
+version: 0.1.0
+description: |
+  Composition showcase. Chains two new node types end-to-end:
+
+    research (react_orchestrator) → refine (burr_subsystem via burr_kit)
+
+  ``research`` uses a single inline subagent + MCP discovery to investigate
+  ``inputs.topic``. Its ``answer`` becomes the ``task`` input for
+  ``refine``, which is a Burr subsystem built on top of burr_kit
+  (``two_step_agent`` example). The Burr subsystem's plan→act trace shows
+  up live in the Mermaid runtime visualizer.
+entrypoint: research
+nodes:
+- id: research
+  type: react_orchestrator
+  provider: mock
+  model: mock-deterministic
+  system_prompt: ''
+  input_keys:
+  - topic
+  output_keys:
+  - answer
+  tools:
+  - builtin_demo_mcp
+  mcps: []
+  retry_policy:
+    max_attempts: 1
+    backoff_seconds: 0.0
+  human_approval: false
+  config:
+    objective_key: topic
+    max_iterations: 4
+    subagents:
+    - id: librarian
+      description: Returns a concise factual paragraph about the topic.
+      system_prompt: |
+        You are a calm librarian. Reply with at most three sentences of
+        factual context about the topic the user names.
+    mcp_discovery:
+    - builtin_demo_mcp
+    ui:
+      x: 180
+      y: 220
+- id: refine
+  type: burr_subsystem
+  provider: mock
+  model: mock-deterministic
+  system_prompt: ''
+  input_keys:
+  - research
+  output_keys:
+  - plan
+  - answer
+  tools: []
+  mcps: []
+  retry_policy:
+    max_attempts: 1
+    backoff_seconds: 0.0
+  human_approval: false
+  config:
+    app_module: app.subsystems.examples.two_step_agent
+    app_factory: build_two_step_app
+    input_map:
+      task: node_outputs.research.answer
+    output_map:
+      plan: plan
+      answer: answer
+    halt_after:
+    - act
+    prompt_dir: prompts/workflows/burr_kit_demo
+    ui:
+      x: 520
+      y: 220
+edges:
+- source: research
+  target: refine
+  label: research.answer -> refine.task

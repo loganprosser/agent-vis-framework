@@ -1,0 +1,52 @@
+name: demo_react_research_assistant
+version: 0.1.0
+description: |
+  ReAct orchestrator demo. Drives a single react_orchestrator node that
+  picks each turn between:
+    - a declared MCP tool (builtin_demo_mcp)
+    - two inline subagents (outliner, summarizer)
+    - MCP-discovered tools (echo, workflow_hint from builtin_demo_mcp)
+  until it emits Action: final_answer with a short report.
+
+  Default provider is mock-deterministic so the workflow loads and runs
+  without an LLM. Override the node's `provider:` (or pass --provider to
+  examples/run.py) to drive it with ollama / litellm / rits.
+entrypoint: orchestrate
+nodes:
+- id: orchestrate
+  type: react_orchestrator
+  provider: mock
+  model: mock-deterministic
+  system_prompt: ''
+  input_keys:
+  - objective
+  output_keys:
+  - answer
+  - iterations
+  tools:
+  - builtin_demo_mcp
+  mcps: []
+  retry_policy:
+    max_attempts: 1
+    backoff_seconds: 0.0
+  human_approval: false
+  config:
+    objective_key: objective
+    max_iterations: 6
+    subagents:
+    - id: outliner
+      description: Produces a 3-bullet outline of how to approach a research task.
+      system_prompt: |
+        You are a research outliner. Reply with exactly 3 short bullets
+        describing how you would investigate the user's topic. No preamble.
+    - id: summarizer
+      description: Summarises arbitrary text into a single concise paragraph.
+      system_prompt: |
+        Summarise the user message in one tight paragraph. No preamble,
+        no bullets, no quoting.
+    mcp_discovery:
+    - builtin_demo_mcp
+    ui:
+      x: 280
+      y: 240
+edges: []

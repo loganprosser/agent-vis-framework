@@ -1,0 +1,13 @@
+description: |
+  Friendly, encouraging review for newer contributors.
+
+  Skips the real lint shell command (keeps dry_run on) and asks the
+  reviewer to lead with strengths before recommendations.
+workflows:
+  - demo_burr_code_review
+config:
+  lint_command: "echo '[friendly-review] skipping strict lint'"
+  subprocess:
+    dry_run: true
+    timeout: 5.0
+  style: "Lead with one specific thing the author did well, then up to three suggestions."

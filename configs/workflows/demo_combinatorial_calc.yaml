@@ -1,0 +1,46 @@
+name: demo_combinatorial_calc
+version: 0.1.0
+description: |
+  Pure-Python combinatorial testing demo — no LLM required. The Burr
+  subsystem walks ``build_model → reduce → execute → report`` using
+  ``burr_kit.testforge.FakeTestForgeClient`` for pairwise reduction and
+  ``burr_kit.SubprocessRunner`` for safe execution.
+
+  By default it tests an inline Python calculator over (op, a, b) with a
+  div-by-zero constraint. Override ``command_template`` via input_map to
+  point at your own CLI.
+entrypoint: combinatorial
+nodes:
+- id: combinatorial
+  type: burr_subsystem
+  provider: mock
+  model: mock-deterministic
+  system_prompt: ''
+  input_keys:
+  - command_template
+  output_keys:
+  - report
+  - passed
+  - failed
+  - executions
+  tools: []
+  mcps: []
+  retry_policy:
+    max_attempts: 1
+    backoff_seconds: 0.0
+  human_approval: false
+  config:
+    app_module: app.subsystems.examples.combinatorial_calc
+    app_factory: build_combinatorial_calc_app
+    input_map: {}
+    output_map:
+      report: report
+      passed: passed
+      failed: failed
+      executions: executions
+    halt_after:
+    - report
+    ui:
+      x: 240
+      y: 240
+edges: []

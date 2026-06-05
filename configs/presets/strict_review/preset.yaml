@@ -1,0 +1,15 @@
+description: |
+  Strict, no-nonsense code review.
+
+  Overrides the lint command to actually invoke ``ruff check`` if it is on
+  the PATH (falls back gracefully if it is not — the SubprocessRunner just
+  surfaces the shell error in the lint_output artifact). Also forces the
+  reviewer agent to prioritise correctness over style.
+workflows:
+  - demo_burr_code_review
+config:
+  lint_command: "ruff check --quiet {target_path} 2>&1 || echo '[ruff missing]'"
+  subprocess:
+    dry_run: false
+    timeout: 8.0
+  style: "Be brutally concise. One sentence per bullet. Cite line numbers when possible."
