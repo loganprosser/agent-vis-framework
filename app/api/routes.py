@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import asyncio
+import json
+import sys
+from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
 
 from app.core.config_loader import ConfigLoader
@@ -12,6 +16,19 @@ from app.core.run_store import RunEvent, RunRecord, create_run_store
 from app.core.state import initial_state
 from app.nodes.burr_subsystem import BURR_JSON_ARTIFACT_NAMES
 from app.schemas.workflow import WorkflowConfig
+
+RITS_CATALOG_DIR_RELATIVE = Path("providers/rits")
+RITS_CATALOG_FILENAMES = ("models.json", "rits-models.json")
+RITS_SCRAPER_RELATIVE = Path("scripts/providers/rits/scrape_rits_models.py")
+
+
+def _find_rits_catalog(config_dir: Path) -> Path | None:
+    base = config_dir / RITS_CATALOG_DIR_RELATIVE
+    for name in RITS_CATALOG_FILENAMES:
+        candidate = base / name
+        if candidate.exists():
+            return candidate
+    return None
 
 
 class RunRequest(BaseModel):
@@ -171,6 +188,42 @@ def create_router(
                 detail=f"Artifact not found: {node_id}/{artifact_name}",
             )
         return node_artifacts[artifact_name]
+
+    # --- RITS catalog endpoints ---
+
+    @router.get("/providers/rits/models")
+    async def list_rits_models() -> dict[str, Any]:
+        """Return the locally-scraped RITS model catalog (if present)."""
+        path = _find_rits_catalog(Path(config_loader.config_dir))
+        if path is None:
+            return {"models": [], "available": False}
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=500, detail=f"Invalid RITS catalog JSON: {exc}") from exc
+        models = data if isinstance(data, list) else data.get("models", [])
+        return {"models": models, "catalog_path": str(path), "available": True}
+
+    @router.post("/providers/rits/refresh")
+    async def refresh_rits_catalog(background: BackgroundTasks) -> dict[str, Any]:
+        """Kick off the Playwright RITS catalog scraper in the background."""
+        project_root = Path(config_loader.config_dir).parent
+        scraper = project_root / RITS_SCRAPER_RELATIVE
+        if not scraper.exists():
+            raise HTTPException(status_code=404, detail=f"Scraper not found: {scraper}")
+        catalog_dir = Path(config_loader.config_dir) / RITS_CATALOG_DIR_RELATIVE
+        catalog_dir.mkdir(parents=True, exist_ok=True)
+
+        async def _run_scraper() -> None:
+            await asyncio.create_subprocess_exec(
+                sys.executable,
+                str(scraper),
+                "--output-dir",
+                str(catalog_dir),
+            )
+
+        background.add_task(_run_scraper)
+        return {"queued": True, "scraper": str(scraper)}
 
     # --- Prompt file endpoints ---
 

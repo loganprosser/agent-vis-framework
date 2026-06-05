@@ -58,6 +58,15 @@ frontend/.vite/
 !.env.example
 
 # --------------------
+# RITS scraper output (per-user; not for VCS)
+# --------------------
+configs/providers/rits/models.json
+configs/providers/rits/rits-models.json
+configs/providers/rits/rits-models.tsv
+configs/providers/rits/rits-models-selector.tsv
+scripts/providers/rits/playwright-profile/
+
+# --------------------
 # OS / editor
 # --------------------
 .DS_Store

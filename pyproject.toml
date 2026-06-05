@@ -25,6 +25,16 @@ dev = [
 litellm = [
     "openai>=1.0.0",
 ]
+rits = [
+    "openai>=1.0.0",
+    "playwright>=1.45.0",
+]
+managed-litellm = [
+    "litellm>=1.40.0",
+]
+strands = [
+    "strands-agents>=0.1.0",
+]
 
 [build-system]
 requires = ["setuptools>=68.0"]

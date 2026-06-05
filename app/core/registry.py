@@ -7,6 +7,7 @@ from app.models.base import ModelProvider
 from app.models.mock_provider import MockModelProvider
 from app.models.ollama_provider import OllamaModelProvider
 from app.models.openai_provider import OpenAIModelProvider
+from app.models.rits_provider import RitsModelProvider
 from app.nodes.base import BaseNode
 from app.schemas.workflow import McpServerConfig, ModelProviderConfig, ToolConfig
 from app.tools.base import Tool
@@ -26,7 +27,8 @@ class ModelRegistry:
             "mock": lambda config: MockModelProvider(config.id, config.default_model, config.config),
             "openai": lambda config: OpenAIModelProvider(config.id, config.default_model, config.config),
             "anthropic": lambda config: AnthropicModelProvider(config.id, config.default_model, config.config),
-            "ibm": lambda config: OpenAIModelProvider(config.id, config.default_model, config.config),
+            "ibm": lambda config: RitsModelProvider(config.id, config.default_model, config.config),
+            "rits": lambda config: RitsModelProvider(config.id, config.default_model, config.config),
             "litellm": lambda config: OpenAIModelProvider(config.id, config.default_model, config.config),
             "local": lambda config: MockModelProvider(config.id, config.default_model, config.config),
             "ollama": lambda config: OllamaModelProvider(config.id, config.default_model, config.config),

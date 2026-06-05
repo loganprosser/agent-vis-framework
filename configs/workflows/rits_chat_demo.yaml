@@ -1,0 +1,32 @@
+name: rits_chat_demo
+version: 0.1.0
+description: |
+  Single-node demo that calls an IBM RITS model through a LiteLLM proxy.
+  Requires:
+    - RITS_API_KEY env var set
+    - A LiteLLM proxy reachable at the provider's base_url (default
+      http://127.0.0.1:4000/v1), or run ./configure-model.sh once to register
+      a rits provider with the proxy you actually have running.
+entrypoint: summarize
+nodes:
+- id: summarize
+  type: variable_extractor
+  provider: rits_default
+  system_prompt: |
+    Summarize the provided requirements into 3 bullet points covering the key
+    behaviours and any edge cases.
+  input_keys:
+  - requirements_doc
+  output_keys:
+  - summary
+  tools: []
+  mcps: []
+  retry_policy:
+    max_attempts: 1
+    backoff_seconds: 0.0
+  human_approval: false
+  config:
+    ui:
+      x: 200
+      y: 200
+edges: []

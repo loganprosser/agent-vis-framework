@@ -160,7 +160,7 @@ class WorkflowConfig(BaseModel):
 
 class ModelProviderConfig(BaseModel):
     id: str
-    type: Literal["mock", "openai", "anthropic", "ibm", "litellm", "local", "ollama"]
+    type: Literal["mock", "openai", "anthropic", "ibm", "rits", "litellm", "local", "ollama"]
     default_model: str
     config: dict[str, Any] = Field(default_factory=dict)
 

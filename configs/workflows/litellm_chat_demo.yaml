@@ -1,0 +1,27 @@
+name: litellm_chat_demo
+version: 0.1.0
+description: |
+  Single-node demo that calls any OpenAI-compatible LiteLLM proxy. Configure a
+  litellm provider with ./configure-model.sh and the workflow becomes runnable.
+entrypoint: summarize
+nodes:
+- id: summarize
+  type: variable_extractor
+  provider: litellm_proxy
+  system_prompt: |
+    Summarize the input as a 3-bullet list.
+  input_keys:
+  - requirements_doc
+  output_keys:
+  - summary
+  tools: []
+  mcps: []
+  retry_policy:
+    max_attempts: 1
+    backoff_seconds: 0.0
+  human_approval: false
+  config:
+    ui:
+      x: 200
+      y: 200
+edges: []
