@@ -98,6 +98,10 @@ See `configs/workflows/branching_burr_requirements.yaml` for a working example.
 
 `BurrSubsystemNode` introspects the factory signature and only injects the kwargs it accepts: `agent_runner`, `prompt_loader`, `preset`, `model_provider`. Add `preset:` and `prompt_dir:` to the node config (relative to `${WORKFLOW_CONFIG_DIR}`) to wire it up. See `docs/burr-kit.md` and `configs/workflows/burr_kit_demo.yaml`.
 
+## StrandsAgentNode (`strands_agent`)
+
+Wraps an Amazon Strands `Agent` as a workflow node. Mirrors `BurrSubsystemNode` shape: config points at `agent_module` + `agent_factory`; the framework imports the factory, calls it with whichever kwargs its signature accepts (`model_provider`, `tools`, plus anything from `input_map`), and invokes the returned `Agent(prompt)`. Captures `tool_uses` and assistant messages as artifacts; emits `strands_agent_started`, `strands_message`, `strands_tool_call`, `strands_agent_completed`. Requires `pip install -e ".[strands]"`. See `app/subsystems/examples/strands_research_agent.py` and `configs/workflows/strands_agent_demo.yaml`.
+
 ## ReactOrchestratorNode (`react_orchestrator`)
 
 Pi-coding-style ReAct loop. Picks each turn among **declared tools** (any `Tool` in `tools:`), **declared subagents** (inline `system_prompt` LLM calls), and **MCP-discovered tools** (`mcp_discovery: [<mcp_tool_id>, ...]` — each server's `list_tools` result is merged into the catalog as `<server>.<tool_name>`). Loop format is strict three-line Thought/Action/Action Input turns; emit `Action: final_answer` to terminate. Emits `react_thought`, `react_action`, `react_observation`, `react_final` events. Config knobs: `objective_key`, `max_iterations`, `subagents`, `mcp_discovery`. See `configs/workflows/react_orchestrator_demo.yaml`.

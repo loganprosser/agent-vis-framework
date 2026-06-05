@@ -45,6 +45,7 @@ def test_default_registry_contains_existing_node_types() -> None:
         "requirements_report",
         "solution_presenter",
         "source_reader",
+        "strands_agent",
         "test_runner",
         "test_validator",
         "test_writer",
