@@ -23,6 +23,7 @@ import {
   WorkflowSettings,
 } from "./editor-panels";
 import type { PromptTarget } from "./editor-panels";
+import { SubsystemGraphPanel } from "./subsystem-graph";
 import type {
   BurrAction,
   BurrSubsystemConfig,
@@ -746,8 +747,13 @@ function SubsystemInspector(props: {
         <dt>Terminal state</dt><dd>{props.metadata?.terminal_state ?? "Not available"}</dd>
         <dt>Halt reason</dt><dd>{props.metadata?.halt_reason ?? "Not available"}</dd>
       </dl>
+      <SubsystemGraphPanel
+        workflowName={props.workflowName}
+        nodeId={props.node.id}
+        currentAction={props.runtime?.currentBurrAction ?? null}
+      />
       <div className="notice">
-        Internal topology is visualization metadata only. Runtime execution still comes from the Python factory.
+        The runtime graph above comes from the Python factory itself. Topology metadata below is editor-only.
       </div>
       <div className="two-column">
         <label className="field">

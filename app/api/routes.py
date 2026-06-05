@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
 
+from app.core.burr_graph import node_id_for, render_subsystem_graph
 from app.core.config_loader import ConfigLoader
 from app.core.graph_builder import GraphBuilder, default_node_registry
 from app.core.registry import ModelRegistry, ToolRegistry
@@ -188,6 +189,37 @@ def create_router(
                 detail=f"Artifact not found: {node_id}/{artifact_name}",
             )
         return node_artifacts[artifact_name]
+
+    # --- Subsystem graph (Mermaid) ---
+
+    @router.get("/workflows/{workflow_name}/subsystems/{node_id}/graph")
+    async def get_subsystem_graph(workflow_name: str, node_id: str) -> dict[str, Any]:
+        if workflow_name not in config_loader.list_workflows():
+            raise HTTPException(status_code=404, detail=f"Workflow not found: {workflow_name}")
+        workflow = config_loader.load_workflow(workflow_name)
+        node = next((n for n in workflow.nodes if n.id == node_id), None)
+        if node is None:
+            raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
+        if node.type != "burr_subsystem":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Node '{node_id}' is not a burr_subsystem (type={node.type}).",
+            )
+        cfg = node.config or {}
+        try:
+            graph = render_subsystem_graph(cfg["app_module"], cfg["app_factory"])
+        except Exception as exc:  # noqa: BLE001 - return diagnostic 500.
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to render Burr graph: {exc}",
+            ) from exc
+        return {
+            "mermaid": graph.mermaid,
+            "actions": graph.actions,
+            "entrypoint": graph.entrypoint,
+            "transitions": graph.transitions,
+            "node_id_map": {name: node_id_for(name) for name in graph.actions},
+        }
 
     # --- RITS catalog endpoints ---
 
